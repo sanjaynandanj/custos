@@ -6,13 +6,13 @@
 
 Every tool call your AI agent makes — read a file, hit an API, run a query — is intercepted, evaluated against your policy, and recorded in a tamper-proof signed ledger. Before execution. Every time.
 
-[![CI](https://github.com/sanjaynandanj/custos/actions/workflows/ci.yml/badge.svg)](https://github.com/sanjaynandanj/custos/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/custos-mcp?color=blue&label=PyPI)](https://pypi.org/project/custos-mcp/)
-[![npm](https://img.shields.io/npm/v/custos-mcp?color=red&label=npm)](https://www.npmjs.com/package/custos-mcp)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/custos-mcp/)
-[![Node](https://img.shields.io/badge/node-18%2B-green)](https://www.npmjs.com/package/custos-mcp)
+[![PyPI](https://img.shields.io/pypi/v/custos-mcp?color=0073b7&label=PyPI&logo=pypi&logoColor=white)](https://pypi.org/project/custos-mcp/)
+[![npm](https://img.shields.io/npm/v/custos-mcp?color=cb3837&label=npm&logo=npm&logoColor=white)](https://www.npmjs.com/package/custos-mcp)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://pypi.org/project/custos-mcp/)
+[![Node](https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white)](https://www.npmjs.com/package/custos-mcp)
+[![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Wire compat](https://img.shields.io/badge/wire-cross--language-7c3aed)](tests/cross-lang/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Wire compat](https://img.shields.io/badge/wire-cross--language-purple)](tests/cross-lang/)
 
 ```
 pip install custos-mcp        # Python 3.10+
