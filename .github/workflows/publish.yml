@@ -1,0 +1,49 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  pypi:
+    name: Publish Python to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/custos-mcp
+    permissions:
+      id-token: write  # Trusted Publisher (no long-lived token needed)
+    defaults:
+      run:
+        working-directory: packages/custos-py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/custos-py/dist
+
+  npm:
+    name: Publish Node to npm
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # npm provenance
+    defaults:
+      run:
+        working-directory: packages/custos-js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
