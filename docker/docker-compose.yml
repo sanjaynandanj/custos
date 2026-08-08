@@ -1,0 +1,59 @@
+# Multi-runtime demo: Python and Node dashboards side-by-side over a shared ledger volume.
+#
+# Bring up:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Then generate traffic:
+#   docker compose -f docker/docker-compose.yml run --rm generator
+#
+# Dashboards:
+#   Python: http://localhost:8787
+#   Node:   http://localhost:8788
+
+services:
+  py-dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+    ports: ["8787:8787"]
+    volumes:
+      - custos-data:/data
+
+  node-dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    ports: ["8788:8787"]
+    volumes:
+      - custos-data:/data
+
+  # One-shot: generate a signed ledger via the Python SDK
+  generator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+    volumes:
+      - custos-data:/data
+    working_dir: /app
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        from pathlib import Path
+        from custos import Gate, Ledger, Actor, Server, generate_keypair, load_policy
+        kp = generate_keypair(); kp.save("/data")
+        ledger = Ledger("/data/ledger.jsonl", kp)
+        pol = load_policy("/app/examples/policy.yaml")
+        gate = Gate(pol, ledger, Actor("agent-1"), Server("demo", pubkey=kp.public_b64()))
+        cases = [
+          ("read_file", {"path": "/workspace/x"}),
+          ("read_file", {"path": "/etc/passwd"}),
+          ("http_request", {"method": "GET", "url": "https://api.x"}),
+          ("http_request", {"method": "POST", "url": "https://api.x"}),
+          ("shell.exec", {"cmd": "rm -rf"}),
+        ]
+        for t, a in cases:
+          r = gate.call(t, a, fn=lambda **kw: {"ok": True})
+          print(t, "->", r.decision.value)
+
+volumes:
+  custos-data:

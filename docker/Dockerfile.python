@@ -1,0 +1,10 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY packages/custos-py /app/custos-py
+RUN pip install --no-cache-dir /app/custos-py[web]
+COPY examples /app/examples
+
+EXPOSE 8787
+ENV CUSTOS_LEDGER=/data/ledger.jsonl
+CMD ["custos", "serve", "--ledger", "/data/ledger.jsonl", "--host", "0.0.0.0"]

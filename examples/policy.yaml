@@ -1,0 +1,39 @@
+version: 1
+id: demo
+default: deny
+rules:
+  # Order matters: deny rules run before allow rules so path-traversal
+  # can't sneak through a permissive prefix match.
+  - id: no-traversal
+    when:
+      args.path: {contains: ".."}
+    decision: deny
+    reason: path traversal blocked
+
+  - id: allow-workspace-read
+    when:
+      tool: read_file
+      args.path: {prefix: "/workspace/"}
+    decision: allow
+    reason: workspace-only reads
+
+  - id: safe-http-get
+    when:
+      tool: http_request
+      args.method: {in: ["GET", "HEAD"]}
+      args.url: {regex: "^https://"}
+    decision: allow
+    reason: HTTPS GET/HEAD
+
+  - id: deny-shell
+    when:
+      tool: {regex: "^shell\\."}
+    decision: deny
+    reason: shell tools disabled
+
+  - id: admin-write
+    when:
+      tool: write_file
+      actor.id: "admin-*"
+    decision: allow
+    reason: admin write

@@ -1,0 +1,51 @@
+{
+  "name": "custos-mcp",
+  "version": "0.1.0",
+  "description": "Runtime governance, policy enforcement, and cryptographic audit ledger for MCP tool calls",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "custos": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./proxy": {
+      "types": "./dist/proxy.d.ts",
+      "import": "./dist/proxy.js"
+    },
+    "./dashboard": {
+      "types": "./dist/dashboard.d.ts",
+      "import": "./dist/dashboard.js"
+    }
+  },
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts src/proxy.ts src/dashboard.ts --format esm,cjs --dts --clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["mcp", "governance", "policy", "audit", "ed25519", "ledger", "ai-agents"],
+  "author": "Custos contributors",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/sanjaynandanj/custos.git", "directory": "packages/custos-js" },
+  "homepage": "https://github.com/sanjaynandanj/custos#readme",
+  "bugs": { "url": "https://github.com/sanjaynandanj/custos/issues" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

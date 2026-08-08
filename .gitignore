@@ -1,0 +1,10 @@
+.custos/
+.custos-demo/
+__pycache__/
+*.egg-info/
+dist/
+build/
+node_modules/
+*.tsbuildinfo
+.pytest_cache/
+.venv/

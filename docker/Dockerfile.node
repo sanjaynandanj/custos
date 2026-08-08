@@ -1,0 +1,10 @@
+FROM node:22-alpine
+
+WORKDIR /app
+COPY packages/custos-js /app/custos-js
+RUN cd /app/custos-js && npm ci && npm run build
+COPY examples /app/examples
+
+EXPOSE 8787
+ENV CUSTOS_LEDGER=/data/ledger.jsonl
+CMD ["node", "/app/custos-js/dist/cli.js", "serve", "--ledger", "/data/ledger.jsonl", "--host", "0.0.0.0"]
