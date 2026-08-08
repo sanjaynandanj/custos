@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Custos — Runtime governance for AI agents</title>
+<meta name="description" content="Every tool call your AI agent makes is intercepted, policy-checked, and recorded in a cryptographically signed audit ledger. Before execution. Every time."/>
+<meta property="og:title" content="Custos — Runtime governance for AI agents"/>
+<meta property="og:description" content="Policy enforcement and tamper-proof audit for MCP tool calls. pip install custos-mcp / npm install custos-mcp"/>
+<meta property="og:type" content="website"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Custos — Your AI agents need a bouncer"/>
+<meta name="twitter:description" content="Policy enforcement + cryptographic audit for MCP tool calls. Open source. Python + Node."/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #09090b;
+    --bg2: #111113;
+    --bg3: #18181b;
+    --border: #27272a;
+    --text: #fafafa;
+    --muted: #71717a;
+    --accent: #7c3aed;
+    --accent2: #a78bfa;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --blue: #3b82f6;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px; height: 56px;
+    background: rgba(9,9,11,.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent2); }
+  .nav-links { display: flex; gap: 24px; align-items: center; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; transition: color .15s; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    background: var(--accent); color: #fff; padding: 6px 16px;
+    border-radius: 6px; font-size: 14px; font-weight: 500; text-decoration: none;
+    transition: opacity .15s;
+  }
+  .nav-cta:hover { opacity: .85; color: #fff; }
+
+  /* HERO */
+  .hero {
+    padding: 140px 24px 80px;
+    text-align: center;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(124,58,237,.15); border: 1px solid rgba(124,58,237,.3);
+    color: var(--accent2); font-size: 12px; font-weight: 500;
+    padding: 4px 12px; border-radius: 999px; margin-bottom: 24px;
+    letter-spacing: .03em;
+  }
+  .badge::before { content: "●"; font-size: 8px; }
+  h1 {
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1.05;
+    margin-bottom: 20px;
+  }
+  h1 em { font-style: normal; color: var(--accent2); }
+  .hero-sub {
+    font-size: clamp(16px, 2vw, 20px);
+    color: var(--muted);
+    max-width: 600px;
+    margin: 0 auto 40px;
+    line-height: 1.6;
+  }
+  .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 48px; }
+  .btn-primary {
+    background: var(--accent); color: #fff; padding: 12px 24px;
+    border-radius: 8px; font-size: 15px; font-weight: 600;
+    text-decoration: none; transition: opacity .15s;
+  }
+  .btn-primary:hover { opacity: .85; }
+  .btn-ghost {
+    background: var(--bg3); color: var(--text); padding: 12px 24px;
+    border-radius: 8px; font-size: 15px; font-weight: 500;
+    text-decoration: none; border: 1px solid var(--border); transition: border-color .15s;
+  }
+  .btn-ghost:hover { border-color: var(--muted); }
+
+  /* INSTALL STRIP */
+  .install-strip {
+    display: flex; gap: 12px; justify-content: center;
+    flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .install-pill {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg3); border: 1px solid var(--border);
+    padding: 10px 18px; border-radius: 8px; font-family: ui-monospace, monospace;
+    font-size: 13px;
+  }
+  .install-pill .lang { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+
+  /* FLOW DIAGRAM */
+  .flow-section { max-width: 900px; margin: 0 auto; padding: 48px 24px; }
+  .flow-diagram {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 16px; padding: 40px; overflow-x: auto;
+  }
+  .flow {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; flex-wrap: nowrap; min-width: 600px;
+  }
+  .flow-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 20px; text-align: center;
+    min-width: 130px;
+  }
+  .flow-box .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .flow-box .name { font-size: 14px; font-weight: 600; }
+  .flow-box.gate { border-color: var(--accent); background: rgba(124,58,237,.08); }
+  .flow-box.gate .name { color: var(--accent2); }
+  .flow-arrow {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0 8px; gap: 2px;
+  }
+  .arrow-line { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .arrow-sym { color: var(--muted); font-size: 18px; }
+  .flow-down { text-align: center; margin-top: 24px; }
+  .flow-down .arrow-sym { display: block; color: var(--muted); font-size: 20px; }
+  .ledger-box {
+    display: inline-block; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 24px; font-family: ui-monospace, monospace;
+    font-size: 13px; margin-top: 12px; text-align: left;
+  }
+  .ledger-box .rec { color: var(--muted); }
+  .ledger-box .rec .allow { color: var(--green); }
+  .ledger-box .rec .deny { color: var(--red); }
+  .ledger-box .sig { color: var(--accent2); font-size: 11px; margin-top: 6px; }
+
+  /* STATS */
+  .stats {
+    display: flex; gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; max-width: 700px; margin: 48px auto;
+  }
+  .stat { flex: 1; background: var(--bg2); padding: 24px; text-align: center; }
+  .stat .n { font-size: 32px; font-weight: 700; color: var(--accent2); }
+  .stat .l { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* SECTION */
+  section { max-width: 1100px; margin: 0 auto; padding: 80px 24px; }
+  .section-label { font-size: 12px; font-weight: 600; color: var(--accent2); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 12px; }
+  h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -1px; margin-bottom: 16px; }
+  .section-sub { font-size: 17px; color: var(--muted); max-width: 560px; line-height: 1.65; margin-bottom: 48px; }
+
+  /* FEATURES GRID */
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .feature {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px;
+    transition: border-color .15s;
+  }
+  .feature:hover { border-color: var(--accent); }
+  .feature-icon { font-size: 24px; margin-bottom: 12px; }
+  .feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .feature p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+  /* CODE */
+  .code-section { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 700px) { .code-section { grid-template-columns: 1fr; } }
+  .code-block {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .code-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+  .code-header .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .code-header .lang-tag { margin-left: auto; font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  pre { padding: 20px; overflow-x: auto; font-size: 13px; line-height: 1.7; }
+  code { font-family: ui-monospace, SFMono-Regular, monospace; }
+  .kw { color: #c678dd; }
+  .fn { color: #61afef; }
+  .str { color: #98c379; }
+  .cmt { color: #5c6370; }
+  .num { color: #d19a66; }
+
+  /* POLICY */
+  .policy-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 700px) { .policy-wrap { grid-template-columns: 1fr; } }
+  .policy-explainer { padding: 8px 0; }
+  .policy-explainer h3 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+  .policy-explainer p { color: var(--muted); font-size: 15px; line-height: 1.7; margin-bottom: 16px; }
+  .op-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .op-table th { color: var(--muted); text-align: left; padding: 6px 0; font-weight: 500; border-bottom: 1px solid var(--border); }
+  .op-table td { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .op-table td:first-child { font-family: ui-monospace, monospace; color: var(--accent2); padding-right: 16px; }
+
+  /* USE CASES */
+  .cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .case {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; position: relative; overflow: hidden;
+  }
+  .case::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--accent);
+  }
+  .case h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  .case p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* LEDGER SECTION */
+  .chain-viz { font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.8; }
+  .chain-rec { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 4px; }
+  .chain-rec .r-seq { color: var(--muted); }
+  .chain-rec .r-tool { color: var(--accent2); }
+  .chain-rec .r-allow { color: var(--green); }
+  .chain-rec .r-deny { color: var(--red); }
+  .chain-rec .r-hash { color: var(--muted); font-size: 11px; }
+  .chain-arrow { color: var(--muted); padding-left: 24px; }
+
+  /* CTA */
+  .cta-section {
+    text-align: center; padding: 100px 24px;
+    background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(124,58,237,.12) 0%, transparent 100%);
+    border-top: 1px solid var(--border);
+  }
+  .cta-section h2 { font-size: clamp(28px, 4vw, 48px); font-weight: 700; letter-spacing: -1px; margin-bottom: 16px; }
+  .cta-section p { color: var(--muted); font-size: 17px; margin-bottom: 40px; }
+
+  /* FOOTER */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 24px; text-align: center;
+    font-size: 13px; color: var(--muted);
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--text); }
+  .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 12px; }
+
+  /* DIVIDER */
+  .divider { border: none; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">cus<span>tos</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#policy">Policy</a>
+    <a href="#usecases">Use cases</a>
+    <a href="https://github.com/sanjaynandanj/custos">Docs</a>
+    <a href="https://github.com/sanjaynandanj/custos" class="nav-cta">GitHub →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="badge">Open source · Apache 2.0</div>
+  <h1>Your AI agents<br/>need a <em>bouncer</em></h1>
+  <p class="hero-sub">
+    Every tool call your agent makes — reading files, hitting APIs, running queries — is intercepted, policy-checked, and recorded in a cryptographically signed audit ledger. Before execution. Every time.
+  </p>
+  <div class="hero-actions">
+    <a href="https://github.com/sanjaynandanj/custos" class="btn-primary">View on GitHub</a>
+    <a href="https://pypi.org/project/custos-mcp/" class="btn-ghost">PyPI ↗</a>
+    <a href="https://www.npmjs.com/package/custos-mcp" class="btn-ghost">npm ↗</a>
+  </div>
+  <div class="install-strip">
+    <div class="install-pill">
+      <span class="lang">Python</span>
+      <code>pip install custos-mcp</code>
+    </div>
+    <div class="install-pill">
+      <span class="lang">Node</span>
+      <code>npm install custos-mcp</code>
+    </div>
+  </div>
+</div>
+
+<!-- FLOW DIAGRAM -->
+<div class="flow-section">
+  <div class="flow-diagram">
+    <div class="flow">
+      <div class="flow-box">
+        <div class="label">client</div>
+        <div class="name">AI Agent</div>
+      </div>
+      <div class="flow-arrow">
+        <span class="arrow-line">tools/call ──────►</span>
+        <span class="arrow-line">◄────── result</span>
+      </div>
+      <div class="flow-box gate">
+        <div class="label">custos</div>
+        <div class="name">Policy Gate</div>
+      </div>
+      <div class="flow-arrow">
+        <span class="arrow-line">── allow ──►</span>
+        <span class="arrow-line">◄── result ─</span>
+      </div>
+      <div class="flow-box">
+        <div class="label">mcp server</div>
+        <div class="name">Tool</div>
+      </div>
+    </div>
+    <div class="flow-down">
+      <span class="arrow-sym">↓</span>
+      <div class="ledger-box">
+        <div class="rec">seq:0  read_file   <span class="allow">allow</span>  sha256:a3f2…</div>
+        <div class="rec">seq:1  shell.exec  <span class="deny">deny</span>   sha256:8c1d…</div>
+        <div class="rec">seq:2  http_get    <span class="allow">allow</span>  sha256:f9b4…</div>
+        <div class="sig">Ed25519 signed · hash-chained · tamper-evident</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="max-width:700px;margin:0 auto;padding:0 24px;">
+  <div class="stats">
+    <div class="stat"><div class="n">0ms</div><div class="l">policy overhead</div></div>
+    <div class="stat"><div class="n">Ed25519</div><div class="l">signed records</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">runtimes, 1 ledger</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">server changes needed</div></div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-label">Features</div>
+  <h2>Everything you need.<br/>Nothing you don't.</h2>
+  <p class="section-sub">Custos is infrastructure, not a SaaS dashboard. Drop it in, define a policy, get audited.</p>
+
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">🛡</div>
+      <h3>Policy-first enforcement</h3>
+      <p>Every tool call evaluated before execution against a YAML policy. Deny by default. First match wins. No runtime modification needed.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔐</div>
+      <h3>Cryptographic audit ledger</h3>
+      <p>Ed25519-signed, SHA-256 hash-chained JSONL. Any modification to any record — including deletion or reordering — breaks the chain instantly.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🌐</div>
+      <h3>Two runtimes, one wire format</h3>
+      <p>Python signs. Node verifies. Or vice versa. The ledger format is a formal spec — enforced by a cross-language test on every commit.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">⚡</div>
+      <h3>In-process SDK</h3>
+      <p><code>gate.call("tool", args, fn)</code> — no proxy subprocess, no JSON-RPC overhead. Wrap any function and get policy + audit in one line.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔌</div>
+      <h3>Zero-change stdio proxy</h3>
+      <p>Drop <code>custos proxy -- python -m server</code> in front of any MCP server. No server code changes. All traffic passes through transparently.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📦</div>
+      <h3>Portable evidence bundles</h3>
+      <p>Export a signed <code>.tar.gz</code> containing the full ledger, policy snapshot, and manifest. Verify it offline without running Custos.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📊</div>
+      <h3>Live dashboard</h3>
+      <p>Real-time allow/deny/error breakdown. Filter by tool or decision. Trace correlation across multi-agent pipelines. Runs in Python or Node.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🧩</div>
+      <h3>Optional adapters</h3>
+      <p>Native DSL is zero-dep and ships everywhere. Cedar and OPA adapters available for teams with existing policy infrastructure. OTel spans optional.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- POLICY -->
+<section id="policy">
+  <div class="section-label">Policy DSL</div>
+  <h2>Write rules, not code.</h2>
+  <p class="section-sub">YAML rules evaluated top-to-bottom. First match wins. Rich operators, dotted-path resolution, human-readable reasons recorded in every audit entry.</p>
+
+  <div class="policy-wrap">
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot" style="background:#ef4444"></div>
+        <div class="dot" style="background:#eab308"></div>
+        <div class="dot" style="background:#22c55e"></div>
+        <span class="lang-tag">policy.yaml</span>
+      </div>
+      <pre><code><span class="cmt"># deny everything by default</span>
+<span class="kw">version</span>: 1
+<span class="kw">id</span>: production
+<span class="kw">default</span>: deny
+
+<span class="kw">rules</span>:
+  <span class="cmt"># block path traversal first</span>
+  - <span class="kw">id</span>: no-traversal
+    <span class="kw">when</span>:
+      <span class="kw">args.path</span>: {<span class="fn">contains</span>: <span class="str">".."</span>}
+    <span class="kw">decision</span>: deny
+    <span class="kw">reason</span>: path traversal blocked
+
+  - <span class="kw">id</span>: workspace-reads
+    <span class="kw">when</span>:
+      <span class="kw">tool</span>: read_file
+      <span class="kw">args.path</span>: {<span class="fn">prefix</span>: <span class="str">"/workspace/"</span>}
+    <span class="kw">decision</span>: allow
+    <span class="kw">reason</span>: workspace-only reads
+
+  - <span class="kw">id</span>: safe-http
+    <span class="kw">when</span>:
+      <span class="kw">tool</span>: http_request
+      <span class="kw">args.method</span>: {<span class="fn">in</span>: [<span class="str">"GET"</span>, <span class="str">"HEAD"</span>]}
+      <span class="kw">args.url</span>: {<span class="fn">regex</span>: <span class="str">"^https://"</span>}
+    <span class="kw">decision</span>: allow
+
+  - <span class="kw">id</span>: deny-shell
+    <span class="kw">when</span>:
+      <span class="kw">tool</span>: {<span class="fn">regex</span>: <span class="str">"^shell\\."</span>}
+    <span class="kw">decision</span>: deny
+    <span class="kw">reason</span>: shell tools disabled</code></pre>
+    </div>
+
+    <div class="policy-explainer">
+      <h3>Match operators</h3>
+      <p>Conditions resolve against any field in the call context using dotted paths: <code>tool</code>, <code>actor.id</code>, <code>args.*</code>, <code>server.id</code>.</p>
+      <table class="op-table">
+        <tr><th>Operator</th><th>Example</th></tr>
+        <tr><td>glob</td><td>"agent-*"</td></tr>
+        <tr><td>prefix</td><td>{prefix: "/workspace/"}</td></tr>
+        <tr><td>suffix</td><td>{suffix: ".json"}</td></tr>
+        <tr><td>contains</td><td>{contains: ".."}</td></tr>
+        <tr><td>regex</td><td>{regex: "^https://"}</td></tr>
+        <tr><td>in / not_in</td><td>{in: ["GET","HEAD"]}</td></tr>
+        <tr><td>gt / lt / gte / lte</td><td>{lte: 1048576}</td></tr>
+        <tr><td>exists</td><td>{exists: false}</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- CODE -->
+<section>
+  <div class="section-label">SDK</div>
+  <h2>Drop in anywhere.</h2>
+  <p class="section-sub">In-process SDK for embedding directly in agent code. No proxy required. Same API in Python and TypeScript.</p>
+
+  <div class="code-section">
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot" style="background:#ef4444"></div>
+        <div class="dot" style="background:#eab308"></div>
+        <div class="dot" style="background:#22c55e"></div>
+        <span class="lang-tag">Python</span>
+      </div>
+      <pre><code><span class="kw">from</span> custos <span class="kw">import</span> (
+  Gate, Ledger, Actor, Server,
+  generate_keypair, load_policy
+)
+
+kp     = generate_keypair()
+kp.<span class="fn">save</span>(<span class="str">".custos"</span>)
+ledger = <span class="fn">Ledger</span>(<span class="str">".custos/ledger.jsonl"</span>, kp)
+policy = <span class="fn">load_policy</span>(<span class="str">"policy.yaml"</span>)
+gate   = <span class="fn">Gate</span>(policy, ledger,
+           <span class="fn">Actor</span>(<span class="str">"agent-1"</span>),
+           <span class="fn">Server</span>(<span class="str">"fs"</span>))
+
+r = gate.<span class="fn">call</span>(
+  <span class="str">"read_file"</span>,
+  {<span class="str">"path"</span>: <span class="str">"/workspace/data.csv"</span>},
+  fn=read_file,
+)
+
+<span class="kw">if</span> r.allowed:
+  process(r.result)
+<span class="kw">else</span>:
+  log(<span class="str">f"denied: </span>{r.reason}<span class="str">"</span>)</code></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot" style="background:#ef4444"></div>
+        <div class="dot" style="background:#eab308"></div>
+        <div class="dot" style="background:#22c55e"></div>
+        <span class="lang-tag">TypeScript</span>
+      </div>
+      <pre><code><span class="kw">import</span> {
+  Gate, Ledger,
+  generateKeypair, loadPolicy, newActor
+} <span class="kw">from</span> <span class="str">"custos-mcp"</span>;
+
+<span class="kw">const</span> kp     = <span class="fn">generateKeypair</span>();
+kp.<span class="fn">save</span>(<span class="str">".custos"</span>);
+<span class="kw">const</span> ledger = <span class="kw">new</span> <span class="fn">Ledger</span>(
+  <span class="str">".custos/ledger.jsonl"</span>, kp);
+<span class="kw">const</span> policy = <span class="fn">loadPolicy</span>(<span class="str">"policy.yaml"</span>);
+<span class="kw">const</span> gate   = <span class="kw">new</span> <span class="fn">Gate</span>(
+  policy, ledger,
+  <span class="fn">newActor</span>(<span class="str">"agent-1"</span>), {id: <span class="str">"fs"</span>});
+
+<span class="kw">const</span> r = <span class="kw">await</span> gate.<span class="fn">call</span>(
+  <span class="str">"read_file"</span>,
+  {path: <span class="str">"/workspace/data.csv"</span>},
+  ({path}) => <span class="fn">readFile</span>(path),
+);
+
+<span class="kw">if</span> (r.allowed) <span class="fn">process</span>(r.result);
+<span class="kw">else</span> <span class="fn">log</span>(<span class="str">`denied: </span>${r.reason}<span class="str">`</span>);</code></pre>
+    </div>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- USE CASES -->
+<section id="usecases">
+  <div class="section-label">Use cases</div>
+  <h2>Built for the real world.</h2>
+  <p class="section-sub">Wherever AI agents run in production, Custos provides the governance layer.</p>
+
+  <div class="cases">
+    <div class="case">
+      <h3>Enterprise AI compliance</h3>
+      <p>SOC 2, HIPAA, ISO 27001 all require audit trails. Export a signed evidence bundle and hand it to your auditor — no access to your systems required.</p>
+    </div>
+    <div class="case">
+      <h3>Multi-agent pipelines</h3>
+      <p>Each sub-agent gets its own policy and actor ID. Correlated trace IDs let you reconstruct exactly what happened across the entire pipeline.</p>
+    </div>
+    <div class="case">
+      <h3>Jailbreak detection</h3>
+      <p>A spike in denied <code>shell.*</code> calls or <code>args.path contains ".."</code> is a signal your agent is being prompted adversarially. Catch it in the ledger.</p>
+    </div>
+    <div class="case">
+      <h3>Development guardrails</h3>
+      <p>Run with a permissive policy during dev, collect the full ledger, review what tools your agent actually calls — then tighten before prod.</p>
+    </div>
+    <div class="case">
+      <h3>Per-customer audit trails</h3>
+      <p>SaaS AI features? Each customer gets their own policy and ledger. Per-customer proof of what the agent accessed on their behalf.</p>
+    </div>
+    <div class="case">
+      <h3>Air-gapped verification</h3>
+      <p>Verify evidence bundles without running Custos. The ledger format is a public spec — implement a verifier in any language.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta-section">
+  <h2>Start governing your agents.</h2>
+  <p>Open source. Apache 2.0. No vendor lock-in. Runs anywhere Python or Node runs.</p>
+  <div class="hero-actions" style="margin-bottom:0">
+    <a href="https://github.com/sanjaynandanj/custos" class="btn-primary">Read the docs →</a>
+    <a href="https://pypi.org/project/custos-mcp/" class="btn-ghost">pip install custos-mcp</a>
+    <a href="https://www.npmjs.com/package/custos-mcp" class="btn-ghost">npm install custos-mcp</a>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-links">
+    <a href="https://github.com/sanjaynandanj/custos">GitHub</a>
+    <a href="https://pypi.org/project/custos-mcp/">PyPI</a>
+    <a href="https://www.npmjs.com/package/custos-mcp">npm</a>
+    <a href="https://github.com/sanjaynandanj/custos/blob/main/spec/WIRE.md">Wire Spec</a>
+    <a href="https://github.com/sanjaynandanj/custos/blob/main/spec/POLICY.md">Policy Docs</a>
+    <a href="https://github.com/sanjaynandanj/custos/blob/main/LICENSE">Apache 2.0</a>
+  </div>
+  <div>Built by <a href="https://github.com/sanjaynandanj">sanjaynandanj</a> · Custos means guardian in Latin</div>
+</footer>
+
+</body>
+</html>
