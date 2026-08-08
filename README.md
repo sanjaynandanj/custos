@@ -1,142 +1,556 @@
-# custos
+<div align="center">
 
-[![CI](https://github.com/sanjaynandanj/custos/actions/workflows/ci.yml/badge.svg)](https://github.com/sanjaynandanj/custos/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/custos-mcp?label=pip%20install%20custos-mcp)](https://pypi.org/project/custos-mcp/)
-[![npm](https://img.shields.io/npm/v/custos-mcp?label=npm%20install%20custos-mcp)](https://www.npmjs.com/package/custos-mcp)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+# custos
 
 **Runtime governance, policy enforcement, and cryptographic audit for MCP tool calls.**
 
-Custos sits between an AI agent (MCP client) and its tools (MCP servers). Every `tools/call` is evaluated against a policy, allowed or denied, timed, and appended to an Ed25519-signed hash-chained ledger. The ledger is portable and byte-for-byte verifiable across languages.
+Every tool call your AI agent makes — read a file, hit an API, run a query — is intercepted, evaluated against your policy, and recorded in a tamper-proof signed ledger. Before execution. Every time.
 
-Two runtimes, one wire format:
+[![CI](https://github.com/sanjaynandanj/custos/actions/workflows/ci.yml/badge.svg)](https://github.com/sanjaynandanj/custos/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/custos-mcp?color=blue&label=PyPI)](https://pypi.org/project/custos-mcp/)
+[![npm](https://img.shields.io/npm/v/custos-mcp?color=red&label=npm)](https://www.npmjs.com/package/custos-mcp)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/custos-mcp/)
+[![Node](https://img.shields.io/badge/node-18%2B-green)](https://www.npmjs.com/package/custos-mcp)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Wire compat](https://img.shields.io/badge/wire-cross--language-purple)](tests/cross-lang/)
 
-| Package        | Language | Install                 |
-|---------------|----------|-------------------------|
-| `custos-mcp`  | Python 3.10+ | `pip install custos-mcp` |
-| `custos-mcp`  | Node 18+     | `npm install custos-mcp` |
+```
+pip install custos-mcp        # Python 3.10+
+npm install custos-mcp        # Node 18+
+```
 
-A ledger signed by the Python package verifies in the Node package, and vice versa. This is enforced by `tests/cross-lang/run.sh` on every change.
+</div>
 
-## Why not [obsigno](https://github.com/amudhan22/obsigno)?
+---
 
-Custos is inspired by obsigno but rewrites it around three ideas obsigno leaves on the table:
+## What is Custos?
 
-1. **Two runtimes, one wire format.** Ledgers, policies, and evidence bundles are language-agnostic. You can write from Python agents and verify from Node auditors, or run the dashboard in whichever runtime your team owns.
-2. **First-class in-process SDK.** The proxy is optional. `Gate.call(tool, args, fn)` gates any function without JSON-RPC in the path — useful for testing, embedded agents, and non-MCP tools.
-3. **A tight native policy DSL.** Cedar and OPA are optional adapters. The default engine is 200 lines of pure evaluator with the operators you actually use (`prefix`, `regex`, `in`, `exists`, wildcard) and rule-level `reason` strings that flow straight into the audit record.
+AI agents call tools. Tools read files, hit APIs, run shell commands, query databases. Without governance, an agent can call *anything* with *any* arguments — and there is no record that it happened.
 
-## Quickstart (Python)
+Custos puts a gate in front of every tool call:
+
+```
+  ┌─────────────┐        tools/call        ┌──────────────────────┐        ┌─────────────┐
+  │             │ ───────────────────────► │                      │        │             │
+  │  AI Agent   │                          │    Custos Gate       │ ──────►│  MCP Server │
+  │  (client)   │ ◄─────────────────────── │  policy + ledger     │        │   / tool    │
+  │             │   result or deny error   │                      │        │             │
+  └─────────────┘                          └──────────────────────┘        └─────────────┘
+                                                      │
+                                                      ▼
+                                            ┌──────────────────┐
+                                            │  ledger.jsonl    │
+                                            │  ──────────────  │
+                                            │  seq:0  sha256:● │
+                                            │  seq:1  sha256:● │
+                                            │  seq:2  sha256:● │
+                                            │  Ed25519 signed  │
+                                            └──────────────────┘
+```
+
+**Every call produces a decision record:** who called what with which arguments, was it allowed or denied, how long it took, which policy rule matched, and why. Records are Ed25519-signed and hash-chained — any modification to any record breaks the chain and is immediately detectable.
+
+---
+
+## Features
+
+- **Policy-first** — every `tools/call` is evaluated before execution. Deny by default.
+- **Native policy DSL** — YAML rules with `prefix`, `suffix`, `regex`, `in`, `exists`, glob wildcards. No external engine required.
+- **Cryptographic audit ledger** — Ed25519-signed, SHA-256 hash-chained JSONL. Tamper-evident, offline-verifiable.
+- **Two runtimes, one wire format** — Python and Node produce identical ledger records. Sign in Python, verify in Node. Enforced by the test suite.
+- **In-process SDK** — `Gate.call(tool, args, fn)` gates any function without running a proxy subprocess.
+- **Transparent stdio proxy** — drop in front of any MCP server with zero server code changes.
+- **Portable evidence bundles** — export a `.tar.gz` with ledger + signed manifest for compliance hand-off.
+- **Live dashboard** — real-time allow/deny/error breakdown, trace view, tool filter at `:8787`.
+- **Optional adapters** — Cedar policy engine, OPA sidecar, OpenTelemetry spans (Python).
+- **CLI parity** — same `custos` commands in both runtimes.
+
+---
+
+## How the ledger works
+
+```
+  ┌────────────────────────────────────────────────────────────────────┐
+  │  Record (seq=0)                                                    │
+  │  prev_hash : sha256:0000...0000  (genesis)                         │
+  │  tool      : read_file                                             │
+  │  decision  : allow                                                 │
+  │  args_hash : sha256:a3f2...                                        │
+  │  ts        : 2026-08-08T12:00:00.000Z                             │
+  │  record_hash: sha256:b1c9...  ◄─────────────────────────────┐     │
+  │  sig        : ed25519:BASE64                                  │     │
+  └────────────────────────────────────────────────────────────────┘     │
+                                                                         │
+  ┌────────────────────────────────────────────────────────────────────┐ │
+  │  Record (seq=1)                                                    │ │
+  │  prev_hash : sha256:b1c9...  ──────────────────────────────────────┘ │
+  │  tool      : shell.exec                                             │
+  │  decision  : deny                                                   │
+  │  record_hash: sha256:d4e7...  ◄────────────────────────────────┐   │
+  │  sig        : ed25519:BASE64                                    │   │
+  └────────────────────────────────────────────────────────────────┘   │
+                                                                        │
+  ┌───────────────────────────────────────────────────────────────────┐ │
+  │  Record (seq=2)                                                   │ │
+  │  prev_hash : sha256:d4e7...  ─────────────────────────────────────┘ │
+  │  ...                                                              │
+  └───────────────────────────────────────────────────────────────────┘
+```
+
+Each record's `record_hash` is the SHA-256 of its own canonical JSON body. The signature covers the hash digest. Breaking the chain or forging a record requires the private key.
+
+---
+
+## Quickstart — Python
 
 ```bash
-pip install custos-mcp
-custos keygen                                     # write .custos/ledger.{key,pub}
-custos proxy --policy policy.yaml -- python -m my_mcp_server
+pip install custos-mcp[web]   # +web adds the FastAPI dashboard
 ```
 
-```python
-from custos import Gate, Ledger, Actor, Server, generate_keypair, load_policy
-
-kp = generate_keypair(); kp.save(".custos")
-ledger = Ledger(".custos/ledger.jsonl", kp)
-policy = load_policy("policy.yaml")
-gate = Gate(policy, ledger, Actor("agent-1"), Server("fs"))
-
-r = gate.call("read_file", {"path": "/workspace/x"}, fn=open_file)
-if r.allowed: use(r.result)
-```
-
-## Quickstart (Node)
+### 1. Generate a keypair
 
 ```bash
-npm install custos-mcp
-npx custos keygen
-npx custos proxy --policy policy.yaml -- node my-mcp-server.js
+custos keygen
+# wrote .custos/ledger.key + ledger.pub
 ```
 
-```ts
-import { Gate, Ledger, generateKeypair, loadPolicy, newActor } from "custos-mcp";
-
-const kp = generateKeypair(); kp.save(".custos");
-const ledger = new Ledger(".custos/ledger.jsonl", kp);
-const policy = loadPolicy("policy.yaml");
-const gate = new Gate(policy, ledger, newActor("agent-1"), { id: "fs" });
-
-const r = await gate.call("read_file", { path: "/workspace/x" }, ({ path }) => readFile(path));
-if (r.allowed) use(r.result);
-```
-
-## Policy DSL
+### 2. Write a policy
 
 ```yaml
+# policy.yaml
 version: 1
-id: default
+id: my-agent
 default: deny
+
 rules:
-  - id: allow-workspace-read
+  - id: allow-workspace-reads
     when:
       tool: read_file
       args.path: {prefix: "/workspace/"}
     decision: allow
     reason: workspace-only reads
 
-  - id: safe-http-get
+  - id: safe-https-get
     when:
       tool: http_request
       args.method: {in: ["GET", "HEAD"]}
       args.url: {regex: "^https://"}
     decision: allow
+    reason: safe HTTP reads
 
-  - id: deny-shell
+  - id: block-shell
     when: {tool: {regex: "^shell\\."}}
     decision: deny
     reason: shell tools disabled
 ```
 
-Full DSL: [`spec/POLICY.md`](spec/POLICY.md). Full wire format: [`spec/WIRE.md`](spec/WIRE.md).
+### 3a. In-process SDK (recommended)
 
-## CLI
+```python
+from custos import Gate, Ledger, Actor, Server, generate_keypair, load_policy
+
+kp = generate_keypair()
+kp.save(".custos")
+
+ledger = Ledger(".custos/ledger.jsonl", kp)
+policy = load_policy("policy.yaml")
+gate   = Gate(policy, ledger, Actor("agent-1"), Server("fs-server"))
+
+# Wrap any tool function
+result = gate.call("read_file", {"path": "/workspace/notes.md"}, fn=open_file)
+
+if result.allowed:
+    print(result.result)       # the tool's return value
+else:
+    print(result.reason)       # why it was denied
+```
+
+### 3b. Stdio proxy (zero server changes)
+
+```bash
+custos proxy \
+  --policy policy.yaml \
+  --actor-id agent-1 \
+  --server-id fs-server \
+  -- python -m my_mcp_server
+```
+
+The proxy transparently forwards all MCP traffic except `tools/call`, which it gates.
+
+### 4. Verify the ledger
+
+```bash
+custos verify --ledger .custos/ledger.jsonl
+# OK  42 records verified
+```
+
+### 5. Launch the dashboard
+
+```bash
+custos serve
+# open http://localhost:8787
+```
+
+---
+
+## Quickstart — Node / TypeScript
+
+```bash
+npm install custos-mcp
+```
+
+### 1. Generate a keypair
+
+```bash
+npx custos keygen
+```
+
+### 2. In-process SDK
+
+```typescript
+import { Gate, Ledger, generateKeypair, loadPolicy, newActor } from "custos-mcp";
+import { readFile } from "node:fs/promises";
+
+const kp     = generateKeypair();
+kp.save(".custos");
+
+const ledger = new Ledger(".custos/ledger.jsonl", kp);
+const policy = loadPolicy("policy.yaml");          // same YAML as Python
+const gate   = new Gate(policy, ledger, newActor("agent-1"), { id: "fs-server" });
+
+const result = await gate.call(
+  "read_file",
+  { path: "/workspace/notes.md" },
+  ({ path }) => readFile(path, "utf8"),
+);
+
+if (result.allowed) console.log(result.result);
+else                console.log(result.reason);
+```
+
+### 3. Stdio proxy
+
+```bash
+npx custos proxy \
+  --policy policy.yaml \
+  --actor-id agent-1 \
+  -- node my-mcp-server.js
+```
+
+### 4. Verify + dashboard
+
+```bash
+npx custos verify
+npx custos serve       # http://localhost:8787
+```
+
+---
+
+## Policy DSL reference
+
+Rules are evaluated **top to bottom — first match wins**. If no rule matches, `default` applies.
+
+```yaml
+version: 1
+id: my-policy
+default: deny        # allow | deny
+
+rules:
+  - id: my-rule
+    when:
+      tool: read_file              # exact match (supports * glob)
+      actor.id: "agent-*"         # glob wildcard
+      args.path: {prefix: "/workspace/"}
+      args.method: {in: ["GET", "HEAD"]}
+      args.url: {regex: "^https://"}
+      args.size: {lte: 10485760}  # numeric: gt, lt, gte, lte
+      args.token: {exists: false} # field presence
+    decision: allow
+    reason: "human-readable reason recorded in the audit log"
+```
+
+### Match operators
+
+| Operator | Example | Meaning |
+|----------|---------|---------|
+| scalar / `*` glob | `"agent-*"` | exact match or glob wildcard |
+| `prefix` | `{prefix: "/workspace/"}` | string starts with |
+| `suffix` | `{suffix: ".json"}` | string ends with |
+| `contains` | `{contains: ".."}` | substring (catches path traversal) |
+| `regex` | `{regex: "^https://"}` | PCRE / ECMA regex, unanchored |
+| `in` | `{in: ["GET","HEAD"]}` | value in list |
+| `not_in` | `{not_in: ["DELETE"]}` | value not in list |
+| `eq` / `ne` | `{eq: 42}` | exact / not exact |
+| `gt` / `lt` / `gte` / `lte` | `{lte: 1048576}` | numeric compare |
+| `exists` | `{exists: false}` | field presence / absence |
+
+### Dotted path resolution
+
+Match keys are dotted paths into the call context:
+
+```
+tool         → "read_file"
+actor.id     → "agent-1"
+actor.kind   → "mcp-client"
+server.id    → "fs-server"
+args.*       → any argument field
+trace_id     → ULID trace identifier
+```
+
+---
+
+## Cross-language wire compatibility
+
+The ledger format is a formal spec (`spec/WIRE.md`). Both packages implement it independently and the test suite proves they produce identical output:
+
+```
+tests/cross-lang/run.sh
+  ├── Python writes 6 records (5 allow + 1 deny, with Unicode args)
+  ├── Node verifies Python's ledger    → OK
+  ├── Node writes 6 records
+  └── Python verifies Node's ledger   → OK
+```
+
+This means:
+- An agent written in Python can be audited by a compliance tool written in Node
+- You can run both dashboards over the same ledger file simultaneously
+- Evidence bundles can be verified without the runtime that created them
+
+---
+
+## Evidence bundles
+
+A signed, portable audit export for compliance hand-off:
+
+```bash
+custos bundle audit-2026-08.tar.gz
+```
+
+The bundle contains:
+
+```
+bundle/
+  manifest.json      # record count, pubkey, timestamp
+  manifest.sig       # Ed25519 signature of the manifest
+  ledger.jsonl       # the full signed chain
+  ledger.pub         # verifier public key
+  policies/          # snapshot of the active policy
+```
+
+Verify offline without running Custos:
+
+```bash
+custos verify-bundle audit-2026-08.tar.gz
+# OK  1247 records verified
+```
+
+---
+
+## Use cases
+
+### Compliant AI agents in regulated industries
+
+Run a coding or document-processing agent inside your SOC 2 / HIPAA perimeter. Define a policy that allows only approved tool calls, collect the signed ledger, and hand the evidence bundle to your auditor. They can verify it cryptographically without access to your system.
+
+### Multi-agent security boundary
+
+In a multi-agent pipeline, each sub-agent gets its own policy and actor ID. The shared ledger gives you a correlated trace across all agents via `trace_id`, so you can reconstruct exactly what happened and in what order.
+
+### Development guardrails
+
+During development, run agents with a permissive policy but collect the full ledger. Review it to understand what tools your agent actually calls — then tighten the policy before production.
+
+### Red-teaming and jailbreak detection
+
+Log every denied call. A spike in denies with `shell.*` tools or path traversal attempts (`args.path contains ..`) is a signal your agent is being prompted adversarially.
+
+### Audit trail for SaaS AI features
+
+If you offer AI-powered features to customers, each customer gets their own policy and ledger. You have per-customer proof of what the agent accessed on their behalf.
+
+---
+
+## CLI reference
 
 Both packages ship the same `custos` command:
 
 ```
-custos keygen                                    # generate ed25519 keypair
-custos proxy --policy p.yaml -- <upstream cmd>   # transparent stdio MCP proxy
-custos verify --ledger .custos/ledger.jsonl      # verify chain + signatures
-custos bundle out.tar.gz                         # export portable evidence
-custos verify-bundle out.tar.gz
-custos serve                                     # dashboard on :8787
-custos show-policy policy.yaml
+custos keygen                                       Generate Ed25519 keypair
+custos proxy --policy p.yaml -- <cmd>              Transparent stdio MCP proxy
+custos verify [--ledger path] [--pub path]         Verify ledger chain + sigs
+custos bundle [--ledger path] output.tar.gz        Export evidence bundle
+custos verify-bundle bundle.tar.gz                 Verify evidence bundle
+custos serve [--host h] [--port p]                 Launch dashboard (default :8787)
+custos show-policy policy.yaml                     Print normalized policy
 ```
 
-## Ledger format
+---
 
-`ledger.jsonl` — one canonical-JSON record per line, chained by `prev_hash`, signed with Ed25519. Sidecar `ledger.pub` holds the base64-encoded 32-byte public key. Cross-language verification is part of the test suite.
-
-## Docker demo
+## Dashboard
 
 ```bash
-docker compose -f docker/docker-compose.yml up --build
-docker compose -f docker/docker-compose.yml run --rm generator
-# open http://localhost:8787 (Python dashboard)
-# open http://localhost:8788 (Node dashboard)
+custos serve                   # Python (FastAPI)
+npx custos serve               # Node (built-in http)
 ```
 
-Both dashboards read the same signed ledger volume — visual proof of wire compat.
+Both open a live dashboard at `http://localhost:8787`:
 
-## Repo layout
+- **Stats bar** — total calls, allow / deny / error counts
+- **Record table** — tool, decision, actor, rule, reason, trace ID — auto-refreshes every 5s
+- **Filter** — by tool name and decision
+- **Trace view** — `GET /api/trace/:id` returns all records for a correlated trace
+
+---
+
+## Optional adapters (Python)
+
+### Cedar policy engine
+
+```bash
+pip install custos-mcp[cedar]
+```
+
+```python
+from custos.adapters.cedar import CedarPolicy
+policy = CedarPolicy(id="my-cedar", policy_text=open("policy.cedar").read())
+```
+
+### OPA sidecar
+
+```bash
+pip install custos-mcp   # OPA runs as a separate process
+```
+
+```python
+from custos.adapters.opa import OpaPolicy
+policy = OpaPolicy(id="my-opa", url="http://localhost:8181/v1/data/custos/authz")
+```
+
+### OpenTelemetry spans
+
+```bash
+pip install custos-mcp[otel]
+```
+
+```python
+from custos.otel import wrap_gate
+gate = wrap_gate(gate)   # emits a span per call with decision/rule/latency attrs
+```
+
+---
+
+## Repo walkthrough
 
 ```
 custos/
-├── spec/                 # WIRE.md, POLICY.md — the contract both packages implement
+│
+├── spec/
+│   ├── WIRE.md          Canonical JSON encoding, hash-chain algorithm,
+│   │                    Ed25519 signing scheme, ledger file format,
+│   │                    evidence bundle structure, trace correlation
+│   └── POLICY.md        Policy DSL grammar, match operators, evaluation
+│                        order, cookbook with common patterns
+│
 ├── packages/
-│   ├── custos-py/        # Python package (pip install custos-mcp)
-│   └── custos-js/        # Node package  (npm install custos-mcp)
-├── examples/             # SDK examples + a policy.yaml + a mock MCP server
-├── docker/               # multi-runtime compose demo
-└── tests/cross-lang/     # Python↔Node ledger interop test
+│   ├── custos-py/                    Python package
+│   │   └── src/custos/
+│   │       ├── canonical.py          Canonical JSON (sort keys, no whitespace)
+│   │       ├── keys.py               Ed25519 keypair — generate, save, load
+│   │       ├── record.py             DecisionRecord dataclass + serialization
+│   │       ├── ledger.py             Append-only JSONL ledger, thread-safe
+│   │       ├── policy.py             Native DSL evaluator (200 lines)
+│   │       ├── sdk.py                Gate — in-process sync + async API
+│   │       ├── proxy.py              Transparent asyncio stdio proxy
+│   │       ├── verify.py             Offline chain + signature verifier
+│   │       ├── bundle.py             Evidence bundle export + verify
+│   │       ├── dashboard.py          FastAPI app + HTML dashboard
+│   │       ├── ids.py                ULID trace IDs, hex span IDs
+│   │       ├── otel.py               OpenTelemetry span wrapper
+│   │       ├── cli.py                Click CLI (keygen/proxy/verify/serve...)
+│   │       └── adapters/
+│   │           ├── cedar.py          Cedar policy engine adapter
+│   │           └── opa.py            OPA HTTP sidecar adapter
+│   │
+│   └── custos-js/                    Node / TypeScript package
+│       └── src/
+│           ├── canonical.ts          Canonical JSON — byte-identical to Python
+│           ├── keys.ts               Ed25519 via node:crypto
+│           ├── record.ts             DecisionRecord types
+│           ├── ledger.ts             Append-only JSONL ledger
+│           ├── policy.ts             Native DSL evaluator
+│           ├── sdk.ts                Gate — async API
+│           ├── proxy.ts              Transparent stdio proxy
+│           ├── verify.ts             Offline verifier
+│           ├── bundle.ts             Evidence bundle (pure tar+gzip, no deps)
+│           ├── dashboard.ts          Dashboard via node:http
+│           ├── ids.ts                ULID + span IDs
+│           ├── cli.ts                CLI — mirrors Python commands
+│           └── index.ts              Public API surface
+│
+├── tests/
+│   └── cross-lang/
+│       ├── run.sh         End-to-end: Python writes → Node verifies
+│       │                              Node writes → Python verifies
+│       ├── py_write.py    Writes a signed ledger via Python SDK
+│       ├── py_verify.py   Verifies a ledger via Python verifier
+│       ├── js_write.mjs   Writes a signed ledger via Node SDK
+│       └── js_verify.mjs  Verifies a ledger via Node verifier
+│
+├── examples/
+│   ├── policy.yaml              Production-ready starter policy
+│   ├── python_sdk_example.py    Python Gate SDK walkthrough
+│   ├── node_sdk_example.mjs     Node Gate SDK walkthrough
+│   └── mock_mcp_server.py       Minimal MCP server for local testing
+│
+└── docker/
+    ├── Dockerfile.python        Python dashboard image
+    ├── Dockerfile.node          Node dashboard image
+    └── docker-compose.yml       Both dashboards + traffic generator
+                                 sharing a single signed ledger volume
 ```
+
+---
+
+## Docker demo
+
+Run both dashboards side-by-side over a shared signed ledger:
+
+```bash
+docker compose -f docker/docker-compose.yml up --build
+
+# In a second terminal — generate traffic:
+docker compose -f docker/docker-compose.yml run --rm generator
+
+# Python dashboard: http://localhost:8787
+# Node dashboard:   http://localhost:8788
+```
+
+Both dashboards read the same `ledger.jsonl` — you can watch the same records appear in both UIs simultaneously.
+
+---
+
+## Installing
+
+| Runtime | Command | Extras |
+|---------|---------|--------|
+| Python | `pip install custos-mcp` | `[web]` FastAPI dashboard · `[otel]` OpenTelemetry · `[cedar]` Cedar engine |
+| Node | `npm install custos-mcp` | — all included |
+
+Python extras:
+```bash
+pip install custos-mcp[web]          # dashboard
+pip install custos-mcp[web,otel]     # dashboard + OTel
+pip install custos-mcp[all]          # everything
+```
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: the wire spec is the contract — any change to the on-disk format must update `spec/WIRE.md` first, then both packages, then `tests/cross-lang/run.sh` must pass.
+
+---
 
 ## License
 
-Apache-2.0.
+[Apache-2.0](LICENSE)
