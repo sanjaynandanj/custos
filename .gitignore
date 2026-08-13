@@ -1,5 +1,6 @@
 .custos/
 .custos-demo/
+.notes/
 __pycache__/
 *.egg-info/
 dist/

@@ -101,6 +101,24 @@ Each record's `record_hash` is the SHA-256 of its own canonical JSON body. The s
 
 ---
 
+## 30-second start
+
+```bash
+# Node
+npx custos-mcp init      # scaffolds .custos/ (keypair + starter policy + .gitignore)
+npx custos-mcp demo      # runs 3 tool calls (1 allow, 2 deny) against a mock MCP + verifies the ledger
+
+# Python
+pip install custos-mcp
+custos init
+custos demo
+```
+
+`init` also prompts once, opt-in, about anonymous usage counts. Say no and it never asks again.
+Set `CUSTOS_TELEMETRY=off` to disable at any time.
+
+---
+
 ## Quickstart — Python
 
 ```bash

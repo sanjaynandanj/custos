@@ -1,0 +1,20 @@
+name = "custos-telemetry"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+# D1 binding — create with:
+#   wrangler d1 create custos-telemetry
+# then paste the returned database_id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "custos-telemetry"
+database_id = "REPLACE_ME"
+
+[vars]
+# Comma-separated allowlist of event names. Anything else is dropped silently.
+ALLOWED_EVENTS = "install,demo,proxy,serve,command"
+
+# Set to "1" to expose GET /stats publicly. Otherwise it requires ?token=<STATS_TOKEN>.
+PUBLIC_STATS = "0"
+
+# Set STATS_TOKEN via `wrangler secret put STATS_TOKEN`.

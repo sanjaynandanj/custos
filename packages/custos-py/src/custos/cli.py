@@ -10,10 +10,13 @@ import click
 
 from custos import __version__
 from custos.bundle import create_bundle, verify_bundle
+from custos.demo import run_demo
+from custos.init import run_init
 from custos.keys import generate_keypair, load_keypair
 from custos.ledger import Ledger
 from custos.policy import load_policy
 from custos.record import Actor, Server
+from custos.telemetry import emit as tel_emit, prompt_consent
 from custos.verify import verify_ledger
 
 
@@ -21,6 +24,42 @@ from custos.verify import verify_ledger
 @click.version_option(__version__, prog_name="custos")
 def main():
     """Custos: runtime governance for MCP tool calls."""
+
+
+@main.command()
+@click.option("--dir", "dir_", default="./.custos", show_default=True, help="Directory to scaffold")
+@click.option("--force", is_flag=True, help="Overwrite existing keypair and policy")
+@click.option("--yes", is_flag=True, help="Assume yes to telemetry prompt (non-interactive)")
+@click.option("--no-telemetry", is_flag=True, help="Assume no to telemetry prompt (non-interactive)")
+def init(dir_: str, force: bool, yes: bool, no_telemetry: bool):
+    """Scaffold .custos/ with keypair, starter policy, and .gitignore."""
+    r = run_init(dir_path=dir_, force=force)
+    click.echo(f"custos init  ->  {r.dir}")
+    for f in r.created:
+        click.echo(f"  + {f}")
+    for f in r.skipped:
+        click.echo(f"  = {f} (exists, use --force to overwrite)")
+    click.echo(f"  pubkey (base64): {r.pubkey}")
+
+    cfg = prompt_consent(assume_yes=yes, assume_no=no_telemetry)
+    if cfg.enabled:
+        tel_emit("install", __version__)
+
+    click.echo("\nNext:")
+    click.echo("  custos demo                       # 30-second end-to-end run")
+    click.echo(f"  custos show-policy {r.dir}/policy.yaml")
+    click.echo(f"  custos proxy --policy {r.dir}/policy.yaml -- <upstream-mcp-cmd>")
+
+
+@main.command()
+@click.option("--keep", is_flag=True, help="Retain the temp ledger dir for inspection")
+@click.option("--quiet", is_flag=True, help="Suppress output (for scripting)")
+def demo(keep: bool, quiet: bool):
+    """Self-contained end-to-end run against an in-process mock MCP."""
+    r = run_demo(keep=keep, quiet=quiet)
+    tel_emit("demo", __version__)
+    if not r.verified:
+        sys.exit(1)
 
 
 @main.command()
@@ -62,6 +101,7 @@ def proxy(policy_path: str, ledger_path: str, keys_dir: str, actor_id: str, serv
     policy = load_policy(policy_path)
     kp = load_keypair(keys_dir)
     ledger = Ledger(ledger_path, kp)
+    tel_emit("proxy", __version__)
     cfg = ProxyConfig(
         upstream_cmd=list(upstream),
         policy=policy,
@@ -82,6 +122,7 @@ def serve(ledger_path: str, host: str, port: int):
     from custos.dashboard import create_app
     import uvicorn
 
+    tel_emit("serve", __version__)
     uvicorn.run(create_app(ledger_path), host=host, port=port, log_level="warning")
 
 

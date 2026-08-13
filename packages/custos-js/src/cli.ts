@@ -5,6 +5,9 @@ import { loadPolicy } from "./policy.js";
 import { newActor } from "./record.js";
 import { verifyLedger } from "./verify.js";
 import { createBundle, verifyBundle } from "./bundle.js";
+import { runInit } from "./init.js";
+import { runDemo } from "./demo.js";
+import { emit, promptConsent } from "./telemetry.js";
 
 const argv = process.argv.slice(2);
 const cmd = argv.shift();
@@ -15,8 +18,47 @@ function opt(name: string, def?: string): string | undefined {
   return def;
 }
 
+function flag(name: string): boolean {
+  return argv.includes(`--${name}`);
+}
+
+async function readVersion(): Promise<string> {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
+  return pkg.version as string;
+}
+
 async function main() {
   switch (cmd) {
+    case "init": {
+      const dir = opt("dir", "./.custos");
+      const force = flag("force");
+      const yes = flag("yes");
+      const no = flag("no-telemetry");
+      const r = runInit({ dir, force });
+      console.log(`custos init  ->  ${r.dir}`);
+      for (const f of r.created) console.log(`  + ${f}`);
+      for (const f of r.skipped) console.log(`  = ${f} (exists, use --force to overwrite)`);
+      console.log(`  pubkey (base64): ${r.pubkey}`);
+      const cfg = await promptConsent({ assumeYes: yes, assumeNo: no });
+      if (cfg.enabled) emit({ event: "install", cliVersion: await readVersion() });
+      console.log("\nNext:");
+      console.log("  custos demo                       # 30-second end-to-end run");
+      console.log("  custos show-policy .custos/policy.yaml");
+      console.log("  custos proxy --policy .custos/policy.yaml -- <upstream-mcp-cmd>");
+      break;
+    }
+    case "demo": {
+      const keep = flag("keep");
+      const quiet = flag("quiet");
+      const r = await runDemo({ keep, quiet });
+      emit({ event: "demo", cliVersion: await readVersion() });
+      if (!r.verified) process.exit(1);
+      break;
+    }
     case "keygen": {
       const dir = opt("dir", "./.custos")!;
       const kp = generateKeypair();
@@ -47,6 +89,7 @@ async function main() {
       const kp = loadKeypair(keysDir);
       const ledger = new Ledger(ledgerPath, kp);
       const policy = loadPolicy(policyPath);
+      emit({ event: "proxy", cliVersion: await readVersion() });
       const code = await runStdioProxy({
         upstreamCmd: upstream,
         policy, ledger,
@@ -61,6 +104,7 @@ async function main() {
       const ledger = opt("ledger", "./.custos/ledger.jsonl")!;
       const host = opt("host", "127.0.0.1")!;
       const port = parseInt(opt("port", "8787")!, 10);
+      emit({ event: "serve", cliVersion: await readVersion() });
       await serve(ledger, { host, port });
       break;
     }
@@ -94,16 +138,23 @@ async function main() {
     }
     case "--version":
     case "-V": {
-      const { readFileSync } = await import("node:fs");
-      const { fileURLToPath } = await import("node:url");
-      const { dirname, join } = await import("node:path");
-      const here = dirname(fileURLToPath(import.meta.url));
-      const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
-      console.log(pkg.version);
+      console.log(await readVersion());
       break;
     }
     default:
-      console.log("custos <command>\n\nCommands:\n  keygen         Generate ed25519 keypair\n  verify         Verify a ledger\n  proxy          Run stdio MCP proxy\n  serve          Launch dashboard\n  bundle         Export evidence bundle\n  verify-bundle  Verify evidence bundle\n  show-policy    Print normalized policy");
+      console.log(
+        "custos <command>\n\n" +
+        "Commands:\n" +
+        "  init           Scaffold .custos/ (keypair + starter policy)\n" +
+        "  demo           Self-contained end-to-end run (30s)\n" +
+        "  keygen         Generate ed25519 keypair\n" +
+        "  verify         Verify a ledger\n" +
+        "  proxy          Run stdio MCP proxy\n" +
+        "  serve          Launch dashboard\n" +
+        "  bundle         Export evidence bundle\n" +
+        "  verify-bundle  Verify evidence bundle\n" +
+        "  show-policy    Print normalized policy",
+      );
       process.exit(cmd ? 1 : 0);
   }
 }
