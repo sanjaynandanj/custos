@@ -1,6 +1,6 @@
 {
   "name": "custos-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime governance, policy enforcement, and cryptographic audit ledger for MCP tool calls",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -22,22 +22,42 @@
     "./dashboard": {
       "types": "./dist/dashboard.d.ts",
       "import": "./dist/dashboard.js"
+    },
+    "./otel": {
+      "types": "./dist/otel.d.ts",
+      "import": "./dist/otel.js"
+    },
+    "./adapters/langgraph": {
+      "types": "./dist/adapters/langgraph.d.ts",
+      "import": "./dist/adapters/langgraph.js"
+    },
+    "./adapters/claude-agent": {
+      "types": "./dist/adapters/claude-agent.d.ts",
+      "import": "./dist/adapters/claude-agent.js"
     }
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts src/proxy.ts src/dashboard.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts src/cli.ts src/proxy.ts src/dashboard.ts src/otel.ts src/adapters/langgraph.ts src/adapters/claude-agent.ts --format esm,cjs --dts --clean",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["mcp", "governance", "policy", "audit", "ed25519", "ledger", "ai-agents"],
+  "keywords": ["mcp", "governance", "policy", "audit", "ed25519", "ledger", "ai-agents", "langgraph", "claude-agent-sdk"],
   "author": "Custos contributors",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/sanjaynandanj/custos.git", "directory": "packages/custos-js" },
   "homepage": "https://github.com/sanjaynandanj/custos#readme",
   "bugs": { "url": "https://github.com/sanjaynandanj/custos/issues" },
   "engines": { "node": ">=18" },
+  "peerDependencies": {
+    "@langchain/langgraph": "*",
+    "@opentelemetry/api": "*"
+  },
+  "peerDependenciesMeta": {
+    "@langchain/langgraph": { "optional": true },
+    "@opentelemetry/api": { "optional": true }
+  },
   "dependencies": {
     "js-yaml": "^4.1.0"
   },
