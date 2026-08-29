@@ -9,3 +9,5 @@ node_modules/
 *.tsbuildinfo
 .pytest_cache/
 .venv/
+.claude/
+*.tgz
