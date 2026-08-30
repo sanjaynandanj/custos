@@ -8,7 +8,7 @@ from custos.record import Decision, DecisionRecord, Actor, Server
 from custos.sdk import Gate, GateResult
 from custos.verify import verify_ledger, VerifyResult
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "Actor",

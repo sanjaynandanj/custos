@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "Runtime governance, policy enforcement, and cryptographic audit ledger for MCP tool calls",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -41,7 +42,7 @@
     "build": "tsup src/index.ts src/cli.ts src/proxy.ts src/dashboard.ts src/otel.ts src/adapters/langgraph.ts src/adapters/claude-agent.ts --format esm,cjs --dts --clean",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm test && npm run build"
   },
   "keywords": ["mcp", "governance", "policy", "audit", "ed25519", "ledger", "ai-agents", "langgraph", "claude-agent-sdk"],
   "author": "Custos contributors",

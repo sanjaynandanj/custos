@@ -10,7 +10,7 @@ Every tool call your AI agent makes — read a file, hit an API, run a query —
 [![npm](https://img.shields.io/npm/v/custos-mcp?color=cb3837&label=npm&logo=npm&logoColor=white)](https://www.npmjs.com/package/custos-mcp)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://pypi.org/project/custos-mcp/)
 [![Node](https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white)](https://www.npmjs.com/package/custos-mcp)
-[![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Wire compat](https://img.shields.io/badge/wire-cross--language-7c3aed)](tests/cross-lang/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
@@ -393,6 +393,8 @@ If you offer AI-powered features to customers, each customer gets their own poli
 Both packages ship the same `custos` command:
 
 ```
+custos init                                         Scaffold .custos/ (keypair + starter policy)
+custos demo                                         Self-contained end-to-end run (30s)
 custos keygen                                       Generate Ed25519 keypair
 custos proxy --policy p.yaml -- <cmd>              Transparent stdio MCP proxy
 custos verify [--ledger path] [--pub path]         Verify ledger chain + sigs
@@ -484,10 +486,15 @@ custos/
 │   │       ├── dashboard.py          FastAPI app + HTML dashboard
 │   │       ├── ids.py                ULID trace IDs, hex span IDs
 │   │       ├── otel.py               OpenTelemetry span wrapper
+│   │       ├── init.py               `custos init` scaffolder
+│   │       ├── demo.py               `custos demo` end-to-end walkthrough
+│   │       ├── telemetry.py          Opt-in anonymous usage counters
 │   │       ├── cli.py                Click CLI (keygen/proxy/verify/serve...)
 │   │       └── adapters/
 │   │           ├── cedar.py          Cedar policy engine adapter
-│   │           └── opa.py            OPA HTTP sidecar adapter
+│   │           ├── opa.py            OPA HTTP sidecar adapter
+│   │           ├── langgraph.py      LangGraph tool node adapter
+│   │           └── claude_agent.py   Claude Agent SDK adapter
 │   │
 │   └── custos-js/                    Node / TypeScript package
 │       └── src/
@@ -502,8 +509,14 @@ custos/
 │           ├── bundle.ts             Evidence bundle (pure tar+gzip, no deps)
 │           ├── dashboard.ts          Dashboard via node:http
 │           ├── ids.ts                ULID + span IDs
+│           ├── init.ts               `custos init` scaffolder
+│           ├── demo.ts               `custos demo` end-to-end walkthrough
+│           ├── telemetry.ts          Opt-in anonymous usage counters
 │           ├── cli.ts                CLI — mirrors Python commands
-│           └── index.ts              Public API surface
+│           ├── index.ts              Public API surface
+│           └── adapters/
+│               ├── langgraph.ts      LangGraph tool node adapter
+│               └── claude-agent.ts   Claude Agent SDK adapter
 │
 ├── tests/
 │   └── cross-lang/
@@ -519,6 +532,13 @@ custos/
 │   ├── python_sdk_example.py    Python Gate SDK walkthrough
 │   ├── node_sdk_example.mjs     Node Gate SDK walkthrough
 │   └── mock_mcp_server.py       Minimal MCP server for local testing
+│
+├── services/
+│   └── telemetry/               Cloudflare Worker that receives opt-in
+│                                anonymous usage counters (no PII)
+│
+├── docs/                        Static landing/marketing page for the
+│                                project (deployed alongside packages)
 │
 └── docker/
     ├── Dockerfile.python        Python dashboard image
