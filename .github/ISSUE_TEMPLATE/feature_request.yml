@@ -1,0 +1,68 @@
+name: Feature request
+description: Suggest a new capability or change to Custos.
+title: "[feat]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome. Concrete problem statements land faster
+        than open-ended wishlists — tell us what you tried to do, not just what
+        you want us to add.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What are you trying to do? What is blocking you today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Sketch the API, CLI, or DSL you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you try, and why did it not work?
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface does this touch?
+      options:
+        - "SDK"
+        - "CLI"
+        - "Proxy / Gate"
+        - "Dashboard"
+        - "Policy DSL"
+        - "Adapter"
+        - "Bundle / archive format"
+        - "Spec (spec/WIRE.md)"
+        - "Docs"
+        - "Other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pr
+    attributes:
+      label: Would you be willing to contribute a PR?
+      options:
+        - "Yes, I can send a PR"
+        - "Maybe, with guidance"
+        - "No, just filing the request"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to prior art, related issues, or transcripts.

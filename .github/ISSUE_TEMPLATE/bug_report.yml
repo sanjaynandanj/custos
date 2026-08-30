@@ -1,0 +1,99 @@
+name: Bug report
+description: Report a bug in Custos (SDK, CLI, proxy, dashboard, ledger, or adapter).
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in what you can — the
+        more we know up front, the faster we can reproduce.
+
+        **Do not report security vulnerabilities here.** Use a private security
+        advisory: https://github.com/sanjaynandanj/custos/security/advisories/new
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: Custos version
+      description: Which release are you on? (Run `custos --version`.)
+      options:
+        - "0.2.x"
+        - "0.1.x"
+        - "other (please specify in additional context)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Which package are you using?
+      options:
+        - "Python (custos-mcp on PyPI)"
+        - "Node (@custos/mcp on npm)"
+        - "Both"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: e.g. macOS 14.5, Ubuntu 22.04, Windows 11
+      placeholder: "macOS 14.5 (arm64)"
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client / agent framework
+      description: Optional — Claude Desktop, Cursor, custom agent, etc.
+      placeholder: "Claude Desktop 0.7.x"
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps a maintainer can follow.
+      placeholder: |
+        1. `custos init`
+        2. Add policy `...`
+        3. Call tool `...`
+        4. Observe `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you think would happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error text and stack traces if any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: ledger
+    attributes:
+      label: Ledger excerpt (optional)
+      description: |
+        Paste the relevant ledger records if useful. Please redact any
+        `args_hash` values you would rather not publish, and never paste raw
+        secrets — `args_hash` is a SHA-256 but the surrounding metadata may
+        still be revealing.
+      render: json
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else — policy file, dashboard screenshot, related issue links.
