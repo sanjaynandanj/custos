@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Custos controls what AI agents are allowed to do, before execution.">
+  <title>Custos — Agent Authorization Playground</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">CUSTOS × GOOGLE CLOUD</span><h1>The bouncer for<br><em>AI agent actions.</em></h1><p>Describe an action. Gemini plans the tool call. Custos decides whether it runs—and signs the evidence.</p></header>
+    <section class="panel auth"><div><strong>1 · Authenticate</strong><span id="identity">A verified Google account is required.</span></div><div id="google-button"></div></section>
+    <section class="panel">
+      <label for="intent"><strong>2 · Give the agent an intent</strong></label>
+      <textarea id="intent" maxlength="500" placeholder="Refund $250 for payment pay_381 because the customer complained"></textarea>
+      <div class="examples"><button data-example="Read customer cust_1024">Safe read</button><button data-example="Refund $75 for payment pay_381">Small refund</button><button data-example="Delete customer cust_1024">Destructive action</button><button data-example="Run shell command rm -rf /">Shell attack</button></div>
+      <button class="primary" id="evaluate" disabled>Plan with Gemini → authorize with Custos</button>
+      <p class="error" id="error"></p>
+    </section>
+    <section class="result hidden" id="result">
+      <div class="decision"><span id="badge"></span><h2 id="decision"></h2><p id="reason"></p></div>
+      <div class="grid"><article><span>GEMINI PLANNED</span><code id="tool"></code><pre id="args"></pre></article><article><span>CUSTOS MATCHED</span><code id="rule"></code><p>Deny-by-default policy evaluated before simulated execution.</p></article></div>
+      <article class="receipt"><span>CRYPTOGRAPHIC RECEIPT</span><div><b>Ledger</b><code id="verified"></code></div><div><b>Record hash</b><code id="hash"></code></div><div><b>Ed25519 signature</b><code id="signature"></code></div></article>
+    </section>
+    <footer>Open source · Apache 2.0 · Built with Gemini, Vertex AI, Cloud Run, and Custos</footer>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

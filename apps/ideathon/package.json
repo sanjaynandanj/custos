@@ -1,0 +1,14 @@
+{
+  "name": "custos-ideathon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^10.3.0",
+    "custos-mcp": "file:../../packages/custos-js"
+  }
+}

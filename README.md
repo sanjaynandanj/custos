@@ -29,6 +29,8 @@ AI agents call tools. Tools read files, hit APIs, run shell commands, query data
 
 Custos puts a gate in front of every tool call:
 
+> **Gen AI Academy demo:** the authenticated Gemini + Cloud Run Agent Authorization Playground lives in [`apps/ideathon`](apps/ideathon). See [`IDEATHON_SUBMISSION.md`](IDEATHON_SUBMISSION.md) for deployment and submission steps.
+
 ```
   ┌─────────────┐        tools/call        ┌──────────────────────┐        ┌─────────────┐
   │             │ ───────────────────────► │                      │        │             │

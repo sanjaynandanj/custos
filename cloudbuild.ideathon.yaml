@@ -1,0 +1,40 @@
+substitutions:
+  _REGION: asia-south1
+  _REPOSITORY: custos
+  _SERVICE: custos-ideathon
+  _VERTEX_LOCATION: us-central1
+  _GEMINI_MODEL: gemini-2.5-flash
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/ideathon/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --service-account=${_SERVICE}@$PROJECT_ID.iam.gserviceaccount.com
+      - --set-env-vars=GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,VERTEX_LOCATION=${_VERTEX_LOCATION},GEMINI_MODEL=${_GEMINI_MODEL}
+      - --min=0
+      - --max=1
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+
+options:
+  logging: CLOUD_LOGGING_ONLY
