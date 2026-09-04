@@ -3,8 +3,12 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFil
 import { dirname, join, basename, extname } from "node:path";
 
 import { canonicalBytes } from "./canonical.js";
+import { newSpanId, newTraceId, isoNowMs } from "./ids.js";
 import { KeyPair } from "./keys.js";
-import { DecisionRecord, GENESIS_PREV_HASH, recordBody } from "./record.js";
+import {
+  AttestationRecord, AttestationReason, DecisionRecord, GENESIS_PREV_HASH,
+  attestationBody, recordBody,
+} from "./record.js";
 
 export class LedgerError extends Error {}
 
@@ -53,6 +57,20 @@ export class Ledger {
     this._prev = last.record_hash;
   }
 
+  /**
+   * Append a decision record to the ledger.
+   *
+   * Concurrency: this method is synchronous by design — it uses openSync /
+   * writeSync / closeSync and mutates in-memory chain state (seq, prev)
+   * atomically within a single event-loop tick. Concurrent calls from
+   * multiple event-loop tasks on the same Ledger instance therefore
+   * serialize naturally (JS is single-threaded within an isolate).
+   *
+   * Cross-instance or cross-process concurrent writes to the same ledger
+   * file are UNSAFE: seq/prev_hash state is per-instance and the hash chain
+   * will diverge. Use a single Ledger per file. For higher-security
+   * deployments consider re2 for policy regex evaluation as well.
+   */
   append(record: DecisionRecord): DecisionRecord {
     record.seq = this._seq;
     record.prev_hash = this._prev;
@@ -70,6 +88,57 @@ export class Ledger {
     this._seq += 1;
     this._prev = record.record_hash!;
     return record;
+  }
+
+  /**
+   * Append a signed attestation record to the chain (WIRE §2.3).
+   *
+   * Attestations share the ledger's hash chain and signing key with
+   * decisions, so a verifier reading the same file gets a single
+   * timeline of "what the control was doing and whether it was alive."
+   */
+  appendAttestation(opts: {
+    reason: AttestationReason;
+    custosVersion: string;
+    policyHash?: string;
+    activeActors?: string[];
+    uptimeMs?: number;
+    traceId?: string;
+  }): AttestationRecord {
+    const rec: AttestationRecord = {
+      v: 1,
+      seq: this._seq,
+      ts: isoNowMs(),
+      trace_id: opts.traceId ?? newTraceId(),
+      span_id: newSpanId(),
+      prev_hash: this._prev,
+      type: "attestation",
+      attestation: {
+        reason: opts.reason,
+        custos_version: opts.custosVersion,
+        policy_hash: opts.policyHash ?? "",
+        active_actors: opts.activeActors ?? [],
+        uptime_ms: opts.uptimeMs ?? 0,
+      },
+    };
+    const body = canonicalBytes(attestationBody(rec));
+    const recordHash = "sha256:" + sha256Hex(body);
+    rec.record_hash = recordHash;
+    const digest = Buffer.from(recordHash.slice(7), "hex");
+    const sig = this.kp.sign(digest);
+    rec.sig = "ed25519:" + sig.toString("base64");
+    const full = { ...attestationBody(rec), record_hash: recordHash, sig: rec.sig };
+    const line = Buffer.concat([canonicalBytes(full), Buffer.from("\n")]);
+    const fd = openSync(this.path, "a");
+    try {
+      writeToFd(fd, line);
+      try { fsyncSync(fd); } catch { /* ignore */ }
+    } finally {
+      closeSync(fd);
+    }
+    this._seq += 1;
+    this._prev = recordHash;
+    return rec;
   }
 
   *iterRecords(): Generator<DecisionRecord> {

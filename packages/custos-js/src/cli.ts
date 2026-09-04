@@ -3,7 +3,7 @@ import { generateKeypair, loadKeypair } from "./keys.js";
 import { Ledger } from "./ledger.js";
 import { loadPolicy } from "./policy.js";
 import { newActor } from "./record.js";
-import { verifyLedger } from "./verify.js";
+import { replayLedger, verifyCoverage, verifyLedger } from "./verify.js";
 import { createBundle, verifyBundle } from "./bundle.js";
 import { runInit } from "./init.js";
 import { runDemo } from "./demo.js";
@@ -71,9 +71,58 @@ async function main() {
       const ledger = opt("ledger", "./.custos/ledger.jsonl")!;
       const pub = opt("pub");
       const r = verifyLedger(ledger, pub);
-      if (r.ok) { console.log(`OK  ${r.records} records verified`); process.exit(0); }
-      for (const e of r.errors) console.error(`ERR ${e}`);
-      process.exit(1);
+      if (r.ok) {
+        console.log(`OK  ${r.records} records verified`);
+      } else {
+        for (const e of r.errors) console.error(`ERR ${e}`);
+        process.exit(1);
+      }
+      if (flag("replay")) {
+        const policiesDir = opt("policies-dir");
+        const rr = replayLedger(ledger, policiesDir);
+        console.log(
+          `REPLAY  ${rr.replayed}/${rr.records} records replayed` +
+          ` (skipped ${rr.skippedNoHash} pre-v0.4.0 records)`,
+        );
+        for (const m of rr.missingPolicies) console.error(`MISS   ${m}`);
+        for (const m of rr.mismatches) console.error(`MISMATCH ${m}`);
+        if (!rr.ok) process.exit(2);
+      }
+      process.exit(0);
+      break;
+    }
+    case "coverage": {
+      const ledger = opt("ledger", "./.custos/ledger.jsonl")!;
+      const intervalS = parseFloat(opt("interval", "60")!);
+      const tolerance = parseFloat(opt("tolerance", "2.0")!);
+      const r = verifyCoverage(ledger, intervalS, tolerance);
+      if (r.attestations === 0) {
+        console.error("NO ATTESTATIONS in ledger — cannot compute coverage.");
+        console.error(
+          "Emit `new Gate(..., { attest: true })` (default) or " +
+          "`ledger.appendAttestation({ reason: 'periodic', ... })` on your cadence.",
+        );
+        process.exit(2);
+      }
+      console.log(
+        `COVERAGE  ${r.attestations} attestations across ${r.windowS.toFixed(1)}s` +
+        ` (${r.firstTs} → ${r.lastTs})`,
+      );
+      for (const [reason, n] of Object.entries(r.byReason).sort()) {
+        console.log(`  ${reason.padEnd(14)} ${n}`);
+      }
+      if (r.gaps.length > 0) {
+        console.error(
+          `GAPS  ${r.gaps.length} gap(s) > ${(intervalS * tolerance).toFixed(1)}s` +
+          ` (max ${r.maxGapS.toFixed(1)}s, total ${r.totalGapS.toFixed(1)}s)`,
+        );
+        for (const g of r.gaps) {
+          console.error(`  ${g.fromTs} → ${g.toTs}  (${g.durationS.toFixed(1)}s)`);
+        }
+        process.exit(2);
+      }
+      console.log(`OK   control observably operating for ${r.windowS.toFixed(1)}s with no gaps`);
+      process.exit(0);
       break;
     }
     case "proxy": {
@@ -100,12 +149,16 @@ async function main() {
       break;
     }
     case "serve": {
+      // NOTE: the dashboard has NO authentication by default. Do not expose it
+      // to untrusted networks. Use --token or CUSTOS_DASHBOARD_TOKEN to require
+      // a bearer token on /api/* endpoints.
       const { serve } = await import("./dashboard.js");
       const ledger = opt("ledger", "./.custos/ledger.jsonl")!;
       const host = opt("host", "127.0.0.1")!;
       const port = parseInt(opt("port", "8787")!, 10);
+      const token = opt("token");
       emit({ event: "serve", cliVersion: await readVersion() });
-      await serve(ledger, { host, port });
+      await serve(ledger, { host, port, token });
       break;
     }
     case "bundle": {
@@ -150,7 +203,9 @@ async function main() {
         "  keygen         Generate ed25519 keypair\n" +
         "  verify         Verify a ledger\n" +
         "  proxy          Run stdio MCP proxy\n" +
-        "  serve          Launch dashboard\n" +
+        "  serve          Launch dashboard (NO auth by default; use --token or\n" +
+        "                 CUSTOS_DASHBOARD_TOKEN to require a bearer token, and\n" +
+        "                 do not expose to untrusted networks)\n" +
         "  bundle         Export evidence bundle\n" +
         "  verify-bundle  Verify evidence bundle\n" +
         "  show-policy    Print normalized policy",

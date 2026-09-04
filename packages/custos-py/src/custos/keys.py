@@ -12,6 +12,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+# Module-level flag so the Windows world-readable warning fires at most once
+# per process rather than once per KeyPair.save() call.
+_windows_perm_warned = False
+
 
 @dataclass
 class KeyPair:
@@ -38,6 +42,17 @@ class KeyPair:
         return base64.b64encode(self.public_bytes()).decode("ascii")
 
     def save(self, dir_path: str | Path) -> None:
+        """Persist keypair to ``<dir>/ledger.key`` + ``ledger.pub``.
+
+        Platform notes:
+          - POSIX: ``chmod 0o600`` is applied so only the owner can read the
+            private key.
+          - Windows: ``os.chmod`` cannot express POSIX mode bits — the file
+            inherits the parent directory's ACL. Store ``.custos/`` inside a
+            user-only-readable directory (e.g. ``%USERPROFILE%\\.custos``);
+            avoid world-readable locations such as ``C:\\Temp``. The best-effort
+            check below warns once if the key ends up world-readable.
+        """
         d = Path(dir_path)
         d.mkdir(parents=True, exist_ok=True)
         priv = d / "ledger.key"
@@ -48,6 +63,27 @@ class KeyPair:
             os.chmod(priv, 0o600)
         except OSError:
             pass
+        # Best-effort Windows warning: on POSIX, chmod already narrowed perms;
+        # on Windows the mode bits shown by stat reflect ACL approximations
+        # and world-read is common in shared/temp dirs.
+        if os.name == "nt":
+            global _windows_perm_warned
+            if not _windows_perm_warned:
+                try:
+                    mode = os.stat(priv).st_mode
+                    if mode & 0o004:  # world-readable bit set
+                        import warnings
+
+                        warnings.warn(
+                            f"custos: private key {priv} appears world-readable; "
+                            "store .custos/ under a user-only directory "
+                            "(e.g. %USERPROFILE%\\.custos).",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                        _windows_perm_warned = True
+                except OSError:
+                    pass
 
 
 def generate_keypair() -> KeyPair:

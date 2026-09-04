@@ -5,6 +5,7 @@ import { isoNowMs, newSpanId, newTraceId } from "./ids.js";
 import { hashOfValue, Ledger } from "./ledger.js";
 import { Policy } from "./policy.js";
 import { Actor, Decision, DecisionRecord, Server, serverToDict } from "./record.js";
+import { generateToken } from "./token.js";
 
 const DENY_CODE = -32001;
 
@@ -59,6 +60,21 @@ export async function runStdioProxy(cfg: ProxyConfig): Promise<number> {
         process.stdout.write(JSON.stringify(err) + "\n");
         return;
       }
+      // Attach a signed per-call attestation token to the forwarded
+      // call's _meta so a cooperating upstream can prove the call
+      // passed through Custos. See WIRE §8.
+      try {
+        const kp: any = (cfg.ledger as any).kp;
+        if (kp && typeof kp.sign === "function") {
+          params._meta.custos_token = generateToken(
+            kp, traceId, spanId, tool, hashOfValue(args), isoNowMs(),
+          );
+        }
+      } catch {
+        // Token generation is best-effort — the ledger still records
+        // the decision. Never block the forwarded call over an
+        // optional evidence artifact.
+      }
       pending.set(msg.id, { tool, args, traceId, spanId, t0: performance.now(), rule: pd.ruleId, reason: pd.reason });
       proc.stdin!.write(JSON.stringify(msg) + "\n");
     } else {
@@ -101,8 +117,17 @@ function buildRecord(
     args_hash: hashOfValue(args),
     result_hash: decision === "allow" && result !== undefined ? hashOfValue(result) : "",
     decision,
-    policy: { engine: cfg.policy.engine, id: cfg.policy.id, rule, reason },
+    policy: {
+      engine: cfg.policy.engine,
+      id: cfg.policy.id,
+      rule,
+      reason,
+      ...(cfg.policy.hash ? { hash: cfg.policy.hash } : {}),
+    },
     latency_ms: latencyMs,
     prev_hash: "",
+    // Stdio proxy is a hard enforcement point: a deny is a JSON-RPC error
+    // and the upstream server never sees the forwarded call.
+    enforcement: { point: "proxy", effect: "blocked" },
   };
 }

@@ -78,7 +78,8 @@ describe("langgraph adapter", () => {
     await expect(denyTool.invoke({ cmd: "id" })).rejects.toBeInstanceOf(CustosDenied);
     const r = verifyLedger(join(dir, "ledger.jsonl"), join(dir, "ledger.pub"));
     expect(r.ok).toBe(true);
-    expect(r.records).toBe(2);
+    // 1 startup attestation + 1 allow + 1 deny.
+    expect(r.records).toBe(3);
   });
 
   it("missing name throws", async () => {

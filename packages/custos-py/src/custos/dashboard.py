@@ -5,11 +5,12 @@ Optional feature — install with `pip install custos-mcp[web]`.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
 try:
-    from fastapi import FastAPI, HTTPException, Query
+    from fastapi import FastAPI, HTTPException, Query, Request
     from fastapi.responses import HTMLResponse, JSONResponse
 except ImportError as e:  # pragma: no cover
     raise ImportError(
@@ -17,9 +18,27 @@ except ImportError as e:  # pragma: no cover
     ) from e
 
 
-def create_app(ledger_path: str | Path) -> "FastAPI":
+def create_app(ledger_path: str | Path, token: Optional[str] = None) -> "FastAPI":
+    """Create the dashboard FastAPI app.
+
+    If ``token`` is provided (or the ``CUSTOS_DASHBOARD_TOKEN`` env var is set),
+    every ``/api/*`` request MUST include ``Authorization: Bearer <token>``
+    or receive 401. When neither is set, all requests are allowed (backwards
+    compatible default; the dashboard has no auth out of the box).
+    """
     ledger_path = Path(ledger_path)
+    # Resolve token from arg or env; empty string is treated as "no token".
+    effective_token = token or os.environ.get("CUSTOS_DASHBOARD_TOKEN") or None
     app = FastAPI(title="Custos Dashboard", version="0.1.0")
+
+    @app.middleware("http")
+    async def _bearer_auth(request: Request, call_next):
+        if effective_token is not None and request.url.path.startswith("/api/"):
+            auth = request.headers.get("authorization", "")
+            expected = f"Bearer {effective_token}"
+            if auth != expected:
+                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
 
     def _iter_records():
         if not ledger_path.exists():

@@ -24,6 +24,16 @@ export class KeyPair {
     return edSign(null, data, this.privateKey);
   }
 
+  /**
+   * Persist keypair to ``<dir>/ledger.key`` + ``ledger.pub``.
+   *
+   * Platform notes:
+   *  - POSIX: ``chmod 0o600`` is applied so only the owner can read the key.
+   *  - Windows: ``chmodSync`` cannot express POSIX mode bits — the file
+   *    inherits the parent directory's ACL. Store ``.custos/`` inside a
+   *    user-only-readable directory (e.g. ``%USERPROFILE%\\.custos``); avoid
+   *    world-readable locations such as ``C:\\Temp``.
+   */
   save(dir: string): void {
     mkdirSync(dir, { recursive: true });
     const priv = join(dir, "ledger.key");

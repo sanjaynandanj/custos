@@ -87,7 +87,8 @@ def test_ledger_records_allow_and_deny(tmp_path: Path):
     from custos.verify import verify_ledger
     r = verify_ledger(str(tmp_path / "ledger.jsonl"), str(tmp_path / "ledger.pub"))
     assert r.ok
-    assert r.records == 2
+    # 1 startup attestation (Gate init) + 1 allow + 1 deny.
+    assert r.records == 3
 
 
 def test_preserves_metadata(tmp_path: Path):

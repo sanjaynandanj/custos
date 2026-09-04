@@ -16,7 +16,8 @@ from typing import Optional
 from custos.ids import iso_now_ms, new_span_id, new_trace_id
 from custos.ledger import Ledger, hash_of_value
 from custos.policy import Policy
-from custos.record import Actor, Decision, DecisionRecord, PolicyResult, Server
+from custos.record import Actor, Decision, DecisionRecord, Enforcement, PolicyResult, Server
+from custos.token import generate_token
 
 
 DENY_CODE = -32001
@@ -111,6 +112,25 @@ async def run_stdio_proxy(config: ProxyConfig) -> int:
                     sys.stdout.write(json.dumps(err_resp) + "\n")
                     sys.stdout.flush()
                     continue
+                # Attach a signed per-call attestation token to the
+                # forwarded call's _meta so a cooperating upstream can
+                # prove the call passed through Custos. See WIRE §8.
+                try:
+                    args_hash = hash_of_value(args)
+                    token = generate_token(
+                        keypair=config.ledger.keypair,
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        tool=tool,
+                        args_hash=args_hash,
+                        ts=iso_now_ms(),
+                    )
+                    params["_meta"]["custos_token"] = token
+                except Exception:
+                    # Token generation is best-effort — the ledger still
+                    # records the decision. Never block the forwarded
+                    # call over an optional evidence artifact.
+                    pass
                 pending[msg.get("id")] = {
                     "tool": tool,
                     "args": args,
@@ -182,8 +202,16 @@ def _record(
         result_hash=hash_of_value(result) if (decision == Decision.ALLOW and result is not None) else "",
         decision=decision,
         policy=PolicyResult(
-            engine=config.policy.engine, id=config.policy.id, rule=rule, reason=reason
+            engine=config.policy.engine,
+            id=config.policy.id,
+            rule=rule,
+            reason=reason,
+            hash=getattr(config.policy, "hash", ""),
         ),
         latency_ms=latency_ms,
         prev_hash="",
+        # The stdio proxy is a hard enforcement point: a deny returns a
+        # JSON-RPC error and the forwarded call is never sent to the
+        # upstream MCP server.
+        enforcement=Enforcement(point="proxy", effect="blocked"),
     )

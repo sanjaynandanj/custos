@@ -23,6 +23,48 @@ npm install custos-mcp        # Node 18+
 
 ---
 
+## Custos × WebMCP
+
+> **New:** Custos ships an adapter for the emerging
+> [WebMCP](https://webmachinelearning.github.io/webmcp/) standard, plus a
+> complete demo application built for the OpenAI WebMCP Challenge:
+> the **Custos Agent Operations Control Room**.
+
+WebMCP lets a website expose real, structured tools to an AI agent running
+in the user's browser via `document.modelContext.registerTool(...)`. That
+means the agent inherits everything an authenticated user can do. Custos
+sits in the middle:
+
+```
+AI Agent  ─►  WebMCP  ─►  Custos  ─►  ALLOW / APPROVAL / DENY  ─►  Web Application
+```
+
+- **`packages/custos-js/src/adapters/webmcp.ts`** — browser-safe adapter
+  that registers Custos-gated WebMCP tools. Normalises Custos allow /
+  deny / approval outcomes into MCP-shaped tool results, and propagates
+  `AbortSignal` cancellation.
+- **`examples/webmcp-control-room/`** — simulated cloud operations
+  console with 8 WebMCP tools. Read tools auto-allow; production
+  restart / rollback / config write require **human approval**;
+  production delete is **hard-denied**. Every decision lands in the
+  existing Custos Ed25519-signed hash-chained ledger.
+
+Docs: [`docs/webmcp/PRD.md`](docs/webmcp/PRD.md) ·
+[`TRD`](docs/webmcp/TRD.md) ·
+[`SECURITY`](docs/webmcp/SECURITY.md) ·
+[`DEMO_SCRIPT`](docs/webmcp/DEMO_SCRIPT.md). Challenge disclosure:
+[`WEBMCP_CHALLENGE.md`](WEBMCP_CHALLENGE.md).
+
+Quickstart:
+
+```sh
+cd examples/webmcp-control-room
+npm install && npm run build && npm start
+# open http://localhost:4173
+```
+
+---
+
 ## What is Custos?
 
 AI agents call tools. Tools read files, hit APIs, run shell commands, query databases. Without governance, an agent can call *anything* with *any* arguments — and there is no record that it happened.
@@ -49,6 +91,105 @@ Custos puts a gate in front of every tool call:
 ```
 
 **Every call produces a decision record:** who called what with which arguments, was it allowed or denied, how long it took, which policy rule matched, and why. Records are Ed25519-signed and hash-chained — any modification to any record breaks the chain and is immediately detectable.
+
+---
+
+## What Custos proves — and what it does not
+
+Two GRC reviewers separately pointed at the shape of the same problem:
+a signed log can prove records weren't altered, but it can't prove the
+control was actually in the path. Silence in a log means either
+"nothing happened" or "you stopped observing." Custos is honest about
+which claims it can make and which it cannot.
+
+### Custos proves cryptographically
+
+- **The records it emitted have not been altered** — SHA-256 hash chain
+  + Ed25519 signatures, verified with `custos verify`.
+- **Which policy was in effect at each decision** — every record
+  carries `policy.hash`, a `sha256:` fingerprint of the exact policy
+  source. `custos verify --replay` reconstructs the rule that fired
+  from a content-addressed snapshot; missing or swapped policies are
+  flagged.
+- **The control was observably running across a time window** —
+  attestation records (`type: "attestation"`) interleaved in the chain
+  bracket periods of liveness. `custos verify --coverage` reports gaps
+  larger than a configured tolerance.
+- **Whether a `deny` blocked the action or merely opined about it** —
+  `enforcement.point` and `enforcement.effect` label every record so
+  an auditor can distinguish `blocked` (the call didn't run) from
+  `advisory` (staged-rollout mode; the call ran anyway).
+
+### Custos proves — *with downstream cooperation*
+
+- **That every call the tool executed was gated** — the SDK and proxy
+  emit a signed per-call attestation token
+  (`custos:v1:<payload>.<sig>`) on every ALLOW. Cooperating tool
+  servers verify it via `custos.token.verify_token` before executing
+  and log verified / rejected / unattested. Cross-checking the
+  tool-side log against the Custos ledger produces the missing
+  evidence: every allow must appear as verified downstream; any
+  unattested downstream call is a smoking gun for bypass.
+
+### Custos does not prove
+
+- **That the tool has no other reachable path.** Coverage attestation
+  needs the tool to check tokens. A tool that doesn't verify tokens,
+  or credentials scoped so agents can reach the resource without going
+  through Custos, defeat the ledger's authority. That is a
+  deployment-layer property (network policy, credential scoping,
+  container boundaries) outside the ledger's scope.
+- **That records exist for calls that never reached Custos.** The
+  ledger is closed under "calls that were gated." Attestation records
+  bound coverage to the extent of `custos verify --coverage` and
+  attestation-token verification on the tool side; neither eliminates
+  the class of bypass.
+- **That the recorded arguments actually satisfied the matched
+  rule.** Records store `args_hash`, not `args`, to keep tool inputs
+  out of the audit surface. `verify --replay` proves the rule
+  identified in the record exists in the policy at that hash with the
+  recorded decision — argument-level replay requires an out-of-band
+  args log the operator opts into.
+
+This is the shape of the evidence, stated plainly. If your reviewer
+asks what a Custos ledger authoritatively answers, point them here.
+
+### Operational notes worth calling out
+
+A few properties of the current implementation that GRC readers ask
+about, stated plainly rather than buried in the code:
+
+- **Attestation records name the active actors in plaintext.**
+  `attestation.active_actors` is a list of `actor.id` values. In a
+  multi-tenant deployment where `actor.id` is tenant-scoped
+  (`agent-acme-corp`), attestation records leak tenant names to
+  anyone with the ledger. If that matters, use opaque IDs.
+- **`active_actors` is not bounded.** A proxy gating a thousand agents
+  produces attestations carrying a thousand IDs each. At current
+  scale this is fine; large deployments should either hash actor IDs
+  or emit per-actor attestations.
+- **Multiple Gates on the same ledger share one policy snapshot
+  directory.** `<ledger>/../policies/` is content-addressed, so
+  concurrent snapshots are idempotent and safe — but no per-Gate
+  isolation. If two Gates in the same process load different policies
+  with the same `id`, both hashes land in one directory; the
+  content-addressed naming keeps them distinct.
+- **`verify --coverage` requires periodic attestations from the
+  operator.** The Gate emits `startup`; nothing emits `periodic`
+  automatically yet. A ledger with only startup attestations shows
+  gaps between restart events, which is often useful (restart cycles
+  as coverage bounds) but is not a substitute for a real heartbeat
+  cadence. Call `ledger.append_attestation(reason="periodic", ...)`
+  on your own timer.
+- **Token freshness is application policy, not library policy.**
+  `verify_token` checks the signature but not the age of `ts`. If a
+  tool server accepts attested calls, it MUST also reject tokens
+  older than a bounded window (recommended: 300s) — otherwise a
+  captured token replays forever.
+
+None of these are bugs. They are boundaries between what the runtime
+enforces and what the operator has to choose. Stating them here
+prevents an auditor from finding them for you.
 
 ---
 

@@ -47,11 +47,29 @@ function iterRecords(ledgerPath: string): any[] {
   return readFileSync(ledgerPath, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
 }
 
-export function serve(ledgerPath: string, opts: { host?: string; port?: number } = {}): Promise<void> {
-  const host = opts.host ?? "127.0.0.1";
-  const port = opts.port ?? 8787;
-  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://${host}`);
+export function createHandler(
+  ledgerPath: string,
+  opts: { token?: string } = {},
+): (req: IncomingMessage, res: ServerResponse) => void {
+  // Resolve token from arg or env; empty string treated as "no token".
+  const effectiveToken =
+    (opts.token && opts.token.length > 0)
+      ? opts.token
+      : (process.env.CUSTOS_DASHBOARD_TOKEN && process.env.CUSTOS_DASHBOARD_TOKEN.length > 0
+          ? process.env.CUSTOS_DASHBOARD_TOKEN
+          : undefined);
+  return (req: IncomingMessage, res: ServerResponse) => {
+    const url = new URL(req.url ?? "/", `http://localhost`);
+    // Bearer auth on /api/* only when a token is configured.
+    if (effectiveToken !== undefined && url.pathname.startsWith("/api/")) {
+      const auth = req.headers["authorization"] ?? "";
+      if (auth !== `Bearer ${effectiveToken}`) {
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ detail: "unauthorized" }));
+        return;
+      }
+    }
     if (url.pathname === "/") {
       res.setHeader("content-type", "text/html; charset=utf-8");
       res.end(HTML);
@@ -92,7 +110,17 @@ export function serve(ledgerPath: string, opts: { host?: string; port?: number }
     }
     res.statusCode = 404;
     res.end("not found");
-  });
+  };
+}
+
+export function serve(
+  ledgerPath: string,
+  opts: { host?: string; port?: number; token?: string } = {},
+): Promise<void> {
+  const host = opts.host ?? "127.0.0.1";
+  const port = opts.port ?? 8787;
+  const handler = createHandler(ledgerPath, { token: opts.token });
+  const server = createServer(handler);
   return new Promise<void>((resolve) => {
     server.listen(port, host, () => {
       console.log(`custos dashboard: http://${host}:${port}`);

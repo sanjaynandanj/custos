@@ -17,7 +17,7 @@ from custos.ledger import Ledger
 from custos.policy import load_policy
 from custos.record import Actor, Server
 from custos.telemetry import emit as tel_emit, prompt_consent
-from custos.verify import verify_ledger
+from custos.verify import replay_ledger, verify_coverage, verify_ledger
 
 
 @click.group()
@@ -75,16 +75,95 @@ def keygen(dir_: str):
 @main.command()
 @click.option("--ledger", "ledger_path", default="./.custos/ledger.jsonl", show_default=True)
 @click.option("--pub", "pub_path", default=None, help="Public key (defaults to ledger.pub sidecar)")
-def verify(ledger_path: str, pub_path: str | None):
-    """Verify a signed ledger."""
+@click.option(
+    "--replay",
+    is_flag=True,
+    help=(
+        "Also point-in-time replay: for each record, resolve the policy at "
+        "record.policy.hash and assert the recorded rule/default is consistent "
+        "with the loaded policy text. Requires content-addressed snapshots "
+        "in --policies-dir (default: <ledger>/../policies)."
+    ),
+)
+@click.option(
+    "--policies-dir",
+    "policies_dir",
+    default=None,
+    help="Content-addressed policy snapshot directory (for --replay).",
+)
+def verify(ledger_path: str, pub_path: str | None, replay: bool, policies_dir: str | None):
+    """Verify a signed ledger; optionally replay policy at each record's hash."""
     r = verify_ledger(ledger_path, pub_path)
     if r.ok:
         click.secho(f"OK  {r.records} records verified", fg="green")
-        sys.exit(0)
     else:
         for e in r.errors:
             click.secho(f"ERR {e}", fg="red")
         sys.exit(1)
+
+    if replay:
+        rr = replay_ledger(ledger_path, policies_dir=policies_dir)
+        # Report structure is deliberately verbose — auditors want the
+        # non-happy path enumerated line-by-line, not a summary.
+        click.echo(
+            f"REPLAY  {rr.replayed}/{rr.records} records replayed"
+            f" (skipped {rr.skipped_no_hash} pre-v0.4.0 records)"
+        )
+        for m in rr.missing_policies:
+            click.secho(f"MISS   {m}", fg="yellow")
+        for m in rr.mismatches:
+            click.secho(f"MISMATCH {m}", fg="red")
+        if not rr.ok:
+            sys.exit(2)
+    sys.exit(0)
+
+
+@main.command()
+@click.option("--ledger", "ledger_path", default="./.custos/ledger.jsonl", show_default=True)
+@click.option(
+    "--interval", "interval_s", default=60.0, show_default=True, type=float,
+    help="Expected periodic attestation interval in seconds.",
+)
+@click.option(
+    "--tolerance", default=2.0, show_default=True, type=float,
+    help="Multiplier: any gap > interval * tolerance is flagged.",
+)
+def coverage(ledger_path: str, interval_s: float, tolerance: float):
+    """Report control-liveness coverage from attestation records (WIRE §2.3).
+
+    Answers the reviewer's question: "was the control actually running
+    the whole time, or did it just stop observing?" Requires the
+    operator to have emitted periodic attestations on the expected
+    cadence — otherwise gaps are ambiguous.
+    """
+    r = verify_coverage(ledger_path, interval_s=interval_s, tolerance=tolerance)
+    if r.attestations == 0:
+        click.secho("NO ATTESTATIONS in ledger — cannot compute coverage.", fg="yellow")
+        click.echo(
+            "Emit `Gate(..., attest=True)` (default) or "
+            "`ledger.append_attestation(reason='periodic', ...)` on your cadence."
+        )
+        sys.exit(2)
+    click.echo(
+        f"COVERAGE  {r.attestations} attestations across {r.window_s:.1f}s "
+        f"({r.first_ts} → {r.last_ts})"
+    )
+    for reason, n in sorted(r.by_reason.items()):
+        click.echo(f"  {reason:<14} {n}")
+    if r.gaps:
+        click.secho(
+            f"GAPS  {len(r.gaps)} gap(s) > {interval_s * tolerance:.1f}s"
+            f" (max {r.max_gap_s:.1f}s, total {r.total_gap_s:.1f}s)",
+            fg="red",
+        )
+        for g in r.gaps:
+            click.echo(f"  {g.from_ts} → {g.to_ts}  ({g.duration_s:.1f}s)")
+        sys.exit(2)
+    click.secho(
+        f"OK   control observably operating for {r.window_s:.1f}s with no gaps",
+        fg="green",
+    )
+    sys.exit(0)
 
 
 @main.command()
@@ -117,13 +196,23 @@ def proxy(policy_path: str, ledger_path: str, keys_dir: str, actor_id: str, serv
 @click.option("--ledger", "ledger_path", default="./.custos/ledger.jsonl", show_default=True)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8787, show_default=True, type=int)
-def serve(ledger_path: str, host: str, port: int):
-    """Launch the FastAPI dashboard (requires `pip install custos-mcp[web]`)."""
+@click.option(
+    "--token",
+    default=None,
+    help="Require Authorization: Bearer <token> on /api/* (or set CUSTOS_DASHBOARD_TOKEN)",
+)
+def serve(ledger_path: str, host: str, port: int, token: str | None):
+    """Launch the FastAPI dashboard (requires `pip install custos-mcp[web]`).
+
+    The dashboard has NO authentication by default. Do not expose it to
+    untrusted networks. Use --token or CUSTOS_DASHBOARD_TOKEN to require
+    a bearer token.
+    """
     from custos.dashboard import create_app
     import uvicorn
 
     tel_emit("serve", __version__)
-    uvicorn.run(create_app(ledger_path), host=host, port=port, log_level="warning")
+    uvicorn.run(create_app(ledger_path, token=token), host=host, port=port, log_level="warning")
 
 
 @main.command()

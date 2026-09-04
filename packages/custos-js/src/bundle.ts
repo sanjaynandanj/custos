@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, statSync } from "node:fs";
 import { createGzip, createGunzip } from "node:zlib";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable, Writable } from "node:stream";
 
@@ -12,9 +12,19 @@ import { verifyLedger, VerifyResult } from "./verify.js";
 
 // Minimal ustar tar writer/reader — sufficient for our bundle format.
 
-interface TarEntry { name: string; data: Buffer; }
+export interface TarEntry { name: string; data: Buffer; }
 
 function tarPad(n: number): number { return (512 - (n % 512)) % 512; }
+
+// Exported for internal tests only; NOT part of the public API.
+export function _buildTarForTest(entries: TarEntry[]): Buffer {
+  return buildTar(entries);
+}
+export function _readTarForTest(buf: Buffer): TarEntry[] {
+  return readTar(buf);
+}
+export const _gzipBufferForTest = gzipBuffer;
+export const _gunzipBufferForTest = gunzipBuffer;
 
 function buildTar(entries: TarEntry[]): Buffer {
   const chunks: Buffer[] = [];
@@ -73,6 +83,23 @@ function readTar(buf: Buffer): TarEntry[] {
   return entries;
 }
 
+/**
+ * Compute the ``policies_hash`` manifest value for a set of policy files.
+ *
+ * Algorithm (spec/WIRE.md §5, added in v0.3.0):
+ *   1. Sort by basename lexicographically.
+ *   2. For each file, sha256(bytes) as hex.
+ *   3. Canonical JSON of [{name, sha256}, ...].
+ *   4. sha256 of that canonical bytes, hex-encoded, prefixed "sha256:".
+ */
+function computePoliciesHash(files: { name: string; data: Buffer }[]): string {
+  const entries = files
+    .map((f) => ({ name: f.name, sha256: createHash("sha256").update(f.data).digest("hex") }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const canonical = canonicalBytes(entries);
+  return "sha256:" + createHash("sha256").update(canonical).digest("hex");
+}
+
 export async function createBundle(
   ledgerPath: string, pubkeyPath: string, output: string, kp: KeyPair, policiesDir?: string,
 ): Promise<string> {
@@ -80,12 +107,44 @@ export async function createBundle(
   const pub = readFileSync(pubkeyPath);
   let records = 0;
   for (const line of ledger.toString("utf8").split("\n")) if (line.trim()) records++;
-  const manifest = {
+
+  // Collect policy files up front so both the tar entries and the manifest
+  // hash see the same bytes.
+  //
+  // v0.4.0: if no explicit policiesDir is passed, look for
+  // `<ledger.parent>/policies/` — the default directory the Gate SDK
+  // snapshots content-addressed policy files into. This preserves every
+  // policy version referenced by any record in the ledger, not just the
+  // latest. See spec/WIRE.md §5.1.
+  //
+  // Also: walk recursively with posix-relative names so the bundle layout
+  // matches the Python writer byte-for-byte (spec/WIRE.md §5).
+  let effectivePoliciesDir = policiesDir;
+  if (!effectivePoliciesDir) {
+    const defaultDir = join(dirname(ledgerPath), "policies");
+    if (existsSync(defaultDir) && statSync(defaultDir).isDirectory()) {
+      effectivePoliciesDir = defaultDir;
+    }
+  }
+  const policyFiles: { name: string; data: Buffer }[] = [];
+  if (effectivePoliciesDir && existsSync(effectivePoliciesDir) && statSync(effectivePoliciesDir).isDirectory()) {
+    walkFilesSorted(effectivePoliciesDir, (full) => {
+      const rel = relative(effectivePoliciesDir!, full).split(/[\\/]/).join("/");
+      policyFiles.push({ name: rel, data: readFileSync(full) });
+    });
+  }
+
+  const manifest: Record<string, unknown> = {
     v: 1,
     created: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
     records,
     pubkey: pub.toString("ascii").trim(),
   };
+  // Optional field added in v0.3.0; older verifiers ignore it, newer verifiers
+  // enforce it. Not emitted when there are no policies (backwards compat).
+  if (policyFiles.length > 0) {
+    manifest.policies_hash = computePoliciesHash(policyFiles);
+  }
   const manifestBytes = canonicalBytes(manifest);
   const digest = createHash("sha256").update(manifestBytes).digest();
   const sig = "ed25519:" + kp.sign(digest).toString("base64");
@@ -96,19 +155,32 @@ export async function createBundle(
     { name: "bundle/ledger.jsonl", data: ledger },
     { name: "bundle/ledger.pub", data: pub },
   ];
-  if (policiesDir && existsSync(policiesDir)) {
-    // simple non-recursive add of top-level files
-    for (const f of readdirSync(policiesDir)) {
-      const full = join(policiesDir, f);
-      if (statSync(full).isFile()) {
-        entries.push({ name: `bundle/policies/${f}`, data: readFileSync(full) });
-      }
-    }
+  for (const pf of policyFiles) {
+    entries.push({ name: `bundle/policies/${pf.name}`, data: pf.data });
   }
   const tar = buildTar(entries);
   const gz = await gzipBuffer(tar);
   writeFileSync(output, gz);
   return output;
+}
+
+/**
+ * Depth-first walk of `root`, invoking `onFile` for every regular file with
+ * an absolute path. Entries at each directory level are visited in
+ * lexicographic order for reproducibility.
+ */
+function walkFilesSorted(root: string, onFile: (fullPath: string) => void): void {
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    const names = readdirSync(cur).sort();
+    for (const name of names) {
+      const full = join(cur, name);
+      const st = statSync(full);
+      if (st.isDirectory()) stack.push(full);
+      else if (st.isFile()) onFile(full);
+    }
+  }
 }
 
 export async function verifyBundle(path: string): Promise<VerifyResult & { manifest?: unknown }> {
@@ -128,6 +200,27 @@ export async function verifyBundle(path: string): Promise<VerifyResult & { manif
   if (!verifySignature(pub, Buffer.from(sig.slice(8), "base64"), digest)) {
     return { ok: false, records: 0, errors: ["manifest signature invalid"] };
   }
+
+  // Optional policies_hash enforcement (v0.3.0+). Missing → skip (old bundles).
+  if (typeof (manifest as any).policies_hash === "string") {
+    const policyFiles: { name: string; data: Buffer }[] = [];
+    const prefix = "bundle/policies/";
+    for (const e of entries) {
+      if (e.name.startsWith(prefix) && e.data.length > 0) {
+        policyFiles.push({ name: e.name.slice(prefix.length), data: e.data });
+      }
+    }
+    const recomputed = computePoliciesHash(policyFiles);
+    if (recomputed !== (manifest as any).policies_hash) {
+      return {
+        ok: false,
+        records: 0,
+        errors: [`policies_hash mismatch: manifest=${(manifest as any).policies_hash} recomputed=${recomputed}`],
+        manifest,
+      };
+    }
+  }
+
   const td = mkdtempSync(join(tmpdir(), "custos-bundle-"));
   try {
     writeFileSync(join(td, "ledger.jsonl"), ledger);

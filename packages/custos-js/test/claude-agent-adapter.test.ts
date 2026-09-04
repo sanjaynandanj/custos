@@ -73,7 +73,8 @@ describe("claude-agent adapter", () => {
     await denyTool.handler({ cmd: "id" });
     const r = verifyLedger(join(dir, "ledger.jsonl"), join(dir, "ledger.pub"));
     expect(r.ok).toBe(true);
-    expect(r.records).toBe(2);
+    // 1 startup attestation + 1 allow + 1 deny.
+    expect(r.records).toBe(3);
   });
 
   it("preserves name/description/input_schema", async () => {

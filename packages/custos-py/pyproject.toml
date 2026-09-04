@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "custos-mcp"
-version = "0.2.0"
+version = "0.4.0"
 description = "Runtime governance, policy enforcement, and cryptographic audit ledger for MCP tool calls"
 readme = "README.md"
 requires-python = ">=3.10"
