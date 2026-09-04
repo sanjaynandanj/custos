@@ -1,0 +1,40 @@
+version: 1
+id: enterprise-data-access
+default: deny
+rules:
+  # Deny anything that isn't a SELECT (INSERT/UPDATE/DELETE/DROP/etc.)
+  # This uses a negated regex approach: the allow rule below only fires when
+  # the query starts with SELECT.
+  #
+  # Deny-first for well-known destructive verbs so the audit trail carries a
+  # specific reason instead of a generic default:deny.
+  - id: deny-write-verb
+    when:
+      tool: db_query
+      args.sql: {regex: "(?i)^\\s*(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|GRANT|REVOKE|CREATE)\\b"}
+    decision: deny
+    reason: write/DDL verbs are not permitted on this connection
+
+  # SELECT-only, whitelisted tables, LIMIT required.
+  # All three regexes must match for allow.
+  - id: allow-select-whitelisted-with-limit
+    when:
+      tool: db_query
+      args.sql:
+        regex: "(?is)^\\s*SELECT\\b.*\\bFROM\\s+(?:public\\.)?(orders|customers|invoices)\\b.*\\bLIMIT\\s+\\d+\\b"
+    decision: allow
+    reason: SELECT on whitelisted table with LIMIT
+
+  # Give a more specific deny reason if a SELECT is missing LIMIT.
+  - id: deny-select-without-limit
+    when:
+      tool: db_query
+      args.sql: {regex: "(?i)^\\s*SELECT\\b"}
+    decision: deny
+    reason: SELECT queries must include a LIMIT clause
+
+# ROADMAP: per-actor row caps and cross-request row-count budgets are not
+# expressible in the current DSL (no aggregation, no side effects on match).
+# The plan is a `budget:` block on rules that consults an external counter
+# store; until then, enforce quotas in the tool implementation and record the
+# row count into the ledger via a follow-up call (or the OTEL exporter).

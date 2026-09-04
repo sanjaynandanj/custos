@@ -11,3 +11,5 @@ node_modules/
 .venv/
 .claude/
 *.tgz
+examples/webmcp-control-room/public/main.js
+examples/webmcp-control-room/public/main.js.map

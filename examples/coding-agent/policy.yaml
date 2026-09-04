@@ -1,0 +1,76 @@
+version: 1
+id: coding-agent
+default: deny
+rules:
+  # --- destructive ops: deny outright ---
+  - id: no-delete
+    when:
+      tool: delete_file
+    decision: deny
+    reason: delete_file is never allowed
+
+  - id: no-commit-to-protected
+    when:
+      tool: git_commit
+      args.branch: {in: ["main", "master", "production"]}
+    decision: deny
+    reason: direct commits to protected branches blocked
+
+  # --- path-traversal guard: must run before the allow-write rule ---
+  - id: no-traversal-write
+    when:
+      tool: write_file
+      args.path: {contains: ".."}
+    decision: deny
+    reason: path traversal blocked
+
+  # --- reads: source-code file types only ---
+  - id: allow-read-py
+    when: {tool: read_file, args.path: {regex: "\\.py$"}}
+    decision: allow
+    reason: read python source
+  - id: allow-read-ts
+    when: {tool: read_file, args.path: {regex: "\\.ts$"}}
+    decision: allow
+    reason: read typescript source
+  - id: allow-read-md
+    when: {tool: read_file, args.path: {regex: "\\.md$"}}
+    decision: allow
+    reason: read markdown
+  - id: allow-read-json
+    when: {tool: read_file, args.path: {regex: "\\.json$"}}
+    decision: allow
+    reason: read json
+
+  # --- writes: same file types, path-traversal already excluded above ---
+  - id: allow-write-py
+    when: {tool: write_file, args.path: {regex: "\\.py$"}}
+    decision: allow
+    reason: write python source
+  - id: allow-write-ts
+    when: {tool: write_file, args.path: {regex: "\\.ts$"}}
+    decision: allow
+    reason: write typescript source
+  - id: allow-write-md
+    when: {tool: write_file, args.path: {regex: "\\.md$"}}
+    decision: allow
+    reason: write markdown
+  - id: allow-write-json
+    when: {tool: write_file, args.path: {regex: "\\.json$"}}
+    decision: allow
+    reason: write json
+
+  # --- shell whitelist ---
+  - id: allow-shell-whitelist
+    when:
+      tool: run_shell
+      args.cmd: {in: ["pytest", "npm test", "ruff", "tsc", "git status", "git diff", "git log"]}
+    decision: allow
+    reason: whitelisted dev command
+
+  # --- non-protected branch commits ---
+  - id: allow-feature-commit
+    when:
+      tool: git_commit
+    decision: allow
+    reason: commit to feature branch

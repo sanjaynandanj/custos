@@ -1,0 +1,10 @@
+version: 1
+id: basic-mcp-policy
+default: deny
+rules:
+  - id: allow-workspace-reads
+    when:
+      tool: read_file
+      args.path: {prefix: "/workspace/"}
+    decision: allow
+    reason: workspace-only reads

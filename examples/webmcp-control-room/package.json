@@ -1,0 +1,26 @@
+{
+  "name": "custos-webmcp-control-room",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Custos WebMCP Challenge demo — simulated agent operations console",
+  "scripts": {
+    "build:assets": "node -e \"import('node:fs').then(fs=>{fs.mkdirSync('public',{recursive:true});for(const f of ['index.html','styles.css'])fs.copyFileSync('client/'+f,'public/'+f);})\"",
+    "build:client": "esbuild client/main.ts --bundle --format=esm --outfile=public/main.js --sourcemap",
+    "build": "npm run build:assets && npm run build:client",
+    "dev": "npm run build:client && tsx server/index.ts",
+    "start": "npm run build:client && tsx server/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "custos-mcp": "file:../../packages/custos-js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
