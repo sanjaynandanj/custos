@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.2 — 2026-09-14
+
+Security patch. Bumps `js-yaml` from `^4.1.0` to `^4.3.2` to close
+GHSA-2883-xcg3-v3hh (HIGH; CPU exhaustion via unbounded merge-key
+handling). Custos parses operator-supplied policy YAML through this
+dep, so the fix ships as a patch release rather than waiting for the
+next feature cut. `npm audit --omit=dev` on 0.4.2 reports zero
+vulnerabilities in the shipped dependency graph. Python package
+version bumped in lockstep to keep the two languages aligned; no
+behavior changes on that side.
+
 ## 0.4.1 — 2026-09-14
 
 Small correctness release. Closes a WIRE §7 gap where a throwing policy
