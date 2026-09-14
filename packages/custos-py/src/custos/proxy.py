@@ -92,7 +92,33 @@ async def run_stdio_proxy(config: ProxyConfig) -> int:
                     "args": args,
                     "trace_id": trace_id,
                 }
-                pd = config.policy.evaluate(ctx)
+                try:
+                    pd = config.policy.evaluate(ctx)
+                except Exception as e:
+                    # WIRE §7: policy engine errors deny by default.
+                    # Record an "error" decision, JSON-RPC error to the
+                    # client, do NOT forward. Silence here would leave
+                    # the proxy running but producing no records for the
+                    # failing tool — the exact silent-down window
+                    # `custos verify --coverage` is meant to catch.
+                    reason = f"policy engine error: {e}"
+                    rec = _record(
+                        config, tool, args, None, Decision.ERROR, "", reason,
+                        latency_ms=0, trace_id=trace_id, span_id=span_id,
+                    )
+                    config.ledger.append(rec)
+                    err_resp = {
+                        "jsonrpc": "2.0",
+                        "id": msg.get("id"),
+                        "error": {
+                            "code": DENY_CODE,
+                            "message": "denied by policy: engine-error",
+                            "data": {"reason": reason, "trace_id": trace_id},
+                        },
+                    }
+                    sys.stdout.write(json.dumps(err_resp) + "\n")
+                    sys.stdout.flush()
+                    continue
                 if pd.decision != Decision.ALLOW:
                     # Deny: reply to client, do not forward
                     rec = _record(

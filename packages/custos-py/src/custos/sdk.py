@@ -136,8 +136,16 @@ class Gate:
         """Evaluate policy only; no execution, no ledger write."""
         tid = trace_id or new_trace_id()
         ctx = self._ctx(tool, args, tid)
-        pd = self.policy.evaluate(ctx)
-        # No record persisted for pure check
+        try:
+            pd = self.policy.evaluate(ctx)
+        except Exception as e:
+            # WIRE §7: policy engine errors deny by default. check() is
+            # inspection-only (no ledger write), so surface the error to
+            # the caller via the returned GateResult. Persisted "error"
+            # records land on the enforcing path (call / acall / proxy).
+            reason = f"policy engine error: {e}"
+            rec = self._build_record(tool, args, None, Decision.ERROR, "", reason, 0, tid)
+            return GateResult(decision=Decision.ERROR, rule="", reason=reason, record=rec, error=str(e))
         rec = self._build_record(
             tool=tool,
             args=args,
@@ -159,7 +167,20 @@ class Gate:
     ) -> GateResult:
         tid = trace_id or new_trace_id()
         ctx = self._ctx(tool, args, tid)
-        pd = self.policy.evaluate(ctx)
+        try:
+            pd = self.policy.evaluate(ctx)
+        except Exception as e:
+            # WIRE §7: policy engine errors deny by default. Emit an
+            # "error" record so the ledger reflects that a decision was
+            # attempted and failed — silence here would reproduce the
+            # exact "stopped observing" failure mode Custos exists to
+            # make detectable. Advisory mode does NOT downgrade this to
+            # allow: advisory is a controlled downgrade of a real policy
+            # decision, not an escape hatch for a broken engine.
+            reason = f"policy engine error: {e}"
+            rec = self._build_record(tool, args, None, Decision.ERROR, "", reason, 0, tid)
+            self.ledger.append(rec)
+            return GateResult(decision=Decision.ERROR, rule="", reason=reason, record=rec, error=str(e))
         if pd.decision != Decision.ALLOW and not self.advisory:
             rec = self._build_record(tool, args, None, pd.decision, pd.rule_id, pd.reason, 0, tid)
             self.ledger.append(rec)
@@ -206,7 +227,14 @@ class Gate:
     ) -> GateResult:
         tid = trace_id or new_trace_id()
         ctx = self._ctx(tool, args, tid)
-        pd = self.policy.evaluate(ctx)
+        try:
+            pd = self.policy.evaluate(ctx)
+        except Exception as e:
+            # WIRE §7 — see call() for rationale.
+            reason = f"policy engine error: {e}"
+            rec = self._build_record(tool, args, None, Decision.ERROR, "", reason, 0, tid)
+            self.ledger.append(rec)
+            return GateResult(decision=Decision.ERROR, rule="", reason=reason, record=rec, error=str(e))
         if pd.decision != Decision.ALLOW and not self.advisory:
             rec = self._build_record(tool, args, None, pd.decision, pd.rule_id, pd.reason, 0, tid)
             self.ledger.append(rec)
