@@ -16,7 +16,7 @@ from custos.verify import (
     replay_ledger, verify_coverage, verify_ledger,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     "Actor",

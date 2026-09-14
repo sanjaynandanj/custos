@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.4.1 — 2026-09-14
+
+Small correctness release. Closes a WIRE §7 gap where a throwing policy
+engine could leave the enforcement path silent — the exact "stopped
+observing" failure mode Custos is supposed to make impossible — and
+lands compliance mapping docs that back the "aligned to SOC 2 / HIPAA"
+positioning with concrete criterion-by-criterion evidence tables.
+
+### Policy engine error handling (WIRE §7)
+
+- **Both languages**: `Gate.call`, `Gate.check` (and `Gate.acall` on
+  Python) now wrap `policy.evaluate()` in a try/except. On failure they
+  emit a `decision:"error"` record with `enforcement.effect:"blocked"`
+  and reason `policy engine error: <msg>`, append to the ledger
+  (call / acall / proxy) or return (check), and never invoke the
+  wrapped fn. Advisory mode does NOT downgrade this to allow —
+  advisory is a controlled downgrade of a real policy decision, not
+  an escape hatch for a broken engine.
+- **Stdio proxy** (both languages): same fix — engine error records
+  land in the ledger, JSON-RPC error is returned to the client, the
+  upstream tool is never called.
+- Test coverage: `packages/custos-js/test/policy-error.test.ts` (3
+  cases), `packages/custos-py/tests/test_policy_error.py` (4 cases
+  incl. `acall`).
+
+### Compliance evidence mapping (new docs)
+
+- `docs/compliance/SOC2-mapping.md` — SOC 2 Trust Services Criteria
+  mapping (CC5, CC6, CC7, CC8, partial A1 and PI1). Strongest coverage
+  at CC7 system operations. Explicit non-goals section names identity
+  provisioning, payload encryption at rest, physical security,
+  incident-response process, and DR as out of scope.
+- `docs/compliance/HIPAA-mapping.md` — HIPAA Security Rule mapping
+  (45 CFR Part 164, Subpart C). Bullseye at §164.312(b) audit
+  controls; also covers §164.312(c) integrity, §164.312(a) access
+  control, §164.308(a)(1)(ii)(D) activity review. Non-goals list
+  covers workforce training, BAAs, contingency planning, physical
+  safeguards, and payload encryption.
+
+Both docs are auditor crib sheets — they include the exact
+`custos verify`, `custos bundle`, and `jq` recipes an assessor would
+run to extract each row's evidence.
+
+### Wire compatibility
+
+No wire changes. Records emitted by 0.4.1 verify under 0.4.0 verifiers
+and vice versa. The new `decision:"error"` records use existing fields.
+
 ## 0.4.0 — 2026-09-04
 
 Auditor-facing release. Two GRC reviewers pointed at real gaps in the
