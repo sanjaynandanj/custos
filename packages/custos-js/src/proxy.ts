@@ -49,7 +49,25 @@ export async function runStdioProxy(cfg: ProxyConfig): Promise<number> {
         args,
         trace_id: traceId,
       };
-      const pd = cfg.policy.evaluate(ctx);
+      let pd;
+      try {
+        pd = cfg.policy.evaluate(ctx);
+      } catch (e) {
+        // WIRE §7: policy engine errors deny by default. Record an
+        // "error" decision, JSON-RPC error to the client, do NOT
+        // forward. Silence here would leave the proxy still running but
+        // producing no records for the failing tool — the exact silent-
+        // down window `custos verify --coverage` is meant to catch.
+        const reason = `policy engine error: ${e instanceof Error ? e.message : String(e)}`;
+        const rec = buildRecord(cfg, tool, args, undefined, "error", "", reason, 0, traceId, spanId);
+        cfg.ledger.append(rec);
+        const err = {
+          jsonrpc: "2.0", id: msg.id,
+          error: { code: DENY_CODE, message: `denied by policy: engine-error`, data: { reason, trace_id: traceId } },
+        };
+        process.stdout.write(JSON.stringify(err) + "\n");
+        return;
+      }
       if (pd.decision !== "allow") {
         const rec = buildRecord(cfg, tool, args, undefined, pd.decision, pd.ruleId, pd.reason, 0, traceId, spanId);
         cfg.ledger.append(rec);

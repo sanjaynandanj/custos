@@ -162,14 +162,40 @@ export class Gate {
 
   check(tool: string, args: unknown, traceId?: string): GateResult {
     const tid = traceId ?? newTraceId();
-    const pd = this.policy.evaluate(this.buildCtx(tool, args, tid));
+    let pd;
+    try {
+      pd = this.policy.evaluate(this.buildCtx(tool, args, tid));
+    } catch (e) {
+      // WIRE §7: policy engine errors deny by default and record a reason.
+      // check() is inspection-only (no ledger write), so surface the error
+      // to the caller via the returned GateResult; the enforcing path
+      // (call() / proxy) is where the persisted "error" record lands.
+      const reason = `policy engine error: ${e instanceof Error ? e.message : String(e)}`;
+      const rec = this.buildRecord(tool, args, undefined, "error", "", reason, 0, tid);
+      return { decision: "error", rule: "", reason, record: rec, allowed: false };
+    }
     const rec = this.buildRecord(tool, args, undefined, pd.decision, pd.ruleId, pd.reason, 0, tid);
     return { decision: pd.decision, rule: pd.ruleId, reason: pd.reason, record: rec, allowed: pd.decision === "allow" };
   }
 
   async call<T>(tool: string, args: Record<string, unknown>, fn: (args: any) => T | Promise<T>, traceId?: string): Promise<GateResult<T>> {
     const tid = traceId ?? newTraceId();
-    const pd = this.policy.evaluate(this.buildCtx(tool, args, tid));
+    let pd;
+    try {
+      pd = this.policy.evaluate(this.buildCtx(tool, args, tid));
+    } catch (e) {
+      // WIRE §7: policy engine errors deny by default. Emit an "error"
+      // record so the ledger reflects that a decision was attempted and
+      // failed — silence here would reproduce the exact "stopped
+      // observing" failure mode Custos exists to make detectable. The
+      // wrapped fn is NEVER called on this path, even in advisory mode:
+      // advisory is a controlled downgrade of a real policy decision,
+      // not an escape hatch for a broken policy engine.
+      const reason = `policy engine error: ${e instanceof Error ? e.message : String(e)}`;
+      const rec = this.buildRecord(tool, args, undefined, "error", "", reason, 0, tid);
+      this.ledger.append(rec);
+      return { decision: "error", rule: "", reason, record: rec, allowed: false, error: reason };
+    }
     if (pd.decision !== "allow" && !this.advisory) {
       const rec = this.buildRecord(tool, args, undefined, pd.decision, pd.ruleId, pd.reason, 0, tid);
       this.ledger.append(rec);
