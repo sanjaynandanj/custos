@@ -1,6 +1,13 @@
-"""Cedar adapter (optional): requires `pip install custos-mcp[cedar]`."""
+"""Cedar adapter (optional): requires `pip install custos-mcp[cedar]`.
+
+Backed by ``cedarpy``, a community-maintained Rust binding for the Cedar
+policy language. Not an official AWS/Cedar Team package. Pinned in
+``pyproject.toml`` to a specific version range for deterministic engine
+semantics — bump only after re-running the cross-language wire tests.
+"""
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import List
 
@@ -16,6 +23,7 @@ class CedarPolicy:
     version: int = 1
     engine: str = "cedar"
     rules: List = field(default_factory=list)
+    hash: str = ""
 
     def __post_init__(self):
         try:
@@ -24,6 +32,9 @@ class CedarPolicy:
             raise ImportError(
                 "Cedar support requires `pip install custos-mcp[cedar]`"
             ) from e
+        if not self.hash:
+            digest = hashlib.sha256(self.policy_text.encode("utf-8")).hexdigest()
+            self.hash = f"sha256:{digest}"
 
     def evaluate(self, ctx: dict) -> PolicyDecision:
         import cedarpy

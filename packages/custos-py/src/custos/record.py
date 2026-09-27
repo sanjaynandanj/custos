@@ -10,6 +10,12 @@ class Decision(str, enum.Enum):
     ALLOW = "allow"
     DENY = "deny"
     ERROR = "error"
+    # Human-in-the-loop: the gate produced an opinion of pending human
+    # confirmation. The underlying tool did NOT execute at the moment this
+    # record was signed. A follow-up record with ``decides_ref`` pointing
+    # back at this record's hash carries the resolution (allow or deny).
+    # See WIRE §2.4.
+    APPROVAL = "approval"
 
 
 @dataclass
@@ -121,6 +127,12 @@ class DecisionRecord:
     latency_ms: int
     prev_hash: str
     enforcement: Optional[Enforcement] = None
+    # Hash of an earlier ``approval`` record this record resolves. When
+    # non-empty, this record is the human-decided follow-up to an earlier
+    # pending approval; readers pair the two by matching ``decides_ref``
+    # against a prior record's ``record_hash``. Empty on ordinary records.
+    # Emitted on the wire only when non-empty — additive per WIRE §2.4.
+    decides_ref: str = ""
     record_hash: Optional[str] = None
     sig: Optional[str] = None
 
@@ -152,6 +164,8 @@ class DecisionRecord:
         # predates the field).
         if self.enforcement is not None:
             body["enforcement"] = self.enforcement.to_dict()
+        if self.decides_ref:
+            body["decides_ref"] = self.decides_ref
         return body
 
     def to_full(self) -> dict:
@@ -202,6 +216,7 @@ class DecisionRecord:
             latency_ms=d.get("latency_ms", 0),
             prev_hash=d["prev_hash"],
             enforcement=enforcement,
+            decides_ref=d.get("decides_ref", ""),
             record_hash=d.get("record_hash"),
             sig=d.get("sig"),
         )

@@ -7,7 +7,15 @@ import { Policy } from "./policy.js";
 import { Actor, Decision, DecisionRecord, Server, serverToDict } from "./record.js";
 import { generateToken } from "./token.js";
 
-const DENY_CODE = -32001;
+export const DENY_CODE = -32001;
+/**
+ * Distinct from DENY_CODE so clients can programmatically detect
+ * "human-in-the-loop required" and route to a resolution flow rather
+ * than surface a hard failure. The pending record's record_hash is
+ * returned in `data.approval_ref` so the resolver knows which
+ * approval it is answering. See WIRE §2.4 / §7.
+ */
+export const APPROVAL_CODE = -32002;
 
 export interface ProxyConfig {
   upstreamCmd: string[];
@@ -69,12 +77,34 @@ export async function runStdioProxy(cfg: ProxyConfig): Promise<number> {
         return;
       }
       if (pd.decision !== "allow") {
+        // Non-allow: reply to client, do not forward. APPROVAL and DENY
+        // differ in code + message so a client can route approvals to a
+        // resolver flow rather than surface them as hard failures.
         const rec = buildRecord(cfg, tool, args, undefined, pd.decision, pd.ruleId, pd.reason, 0, traceId, spanId);
         cfg.ledger.append(rec);
-        const err = {
-          jsonrpc: "2.0", id: msg.id,
-          error: { code: DENY_CODE, message: `denied by policy: ${pd.ruleId || "default"}`, data: { reason: pd.reason, trace_id: traceId } },
-        };
+        const err = pd.decision === "approval"
+          ? {
+              jsonrpc: "2.0", id: msg.id,
+              error: {
+                code: APPROVAL_CODE,
+                message: `approval required: ${pd.ruleId || "default"}`,
+                data: {
+                  reason: pd.reason,
+                  trace_id: traceId,
+                  // Pending record hash so a resolver can reference this
+                  // specific pending decision via `decides_ref`.
+                  approval_ref: rec.record_hash,
+                },
+              },
+            }
+          : {
+              jsonrpc: "2.0", id: msg.id,
+              error: {
+                code: DENY_CODE,
+                message: `denied by policy: ${pd.ruleId || "default"}`,
+                data: { reason: pd.reason, trace_id: traceId },
+              },
+            };
         process.stdout.write(JSON.stringify(err) + "\n");
         return;
       }

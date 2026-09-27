@@ -38,7 +38,7 @@ Every gated tool call produces exactly one record appended to the ledger. Field 
   "tool": "read_file",
   "args_hash": "sha256:hex...",    // sha256 of canonical JSON of args
   "result_hash": "sha256:hex...",  // sha256 of canonical JSON of result, or "" if denied
-  "decision": "allow",             // one of: allow | deny | error
+  "decision": "allow",             // one of: allow | deny | approval | error
   "policy": {
     "engine": "native",            // native | cedar | opa
     "id": "default",               // policy bundle id (author-supplied name)
@@ -46,12 +46,14 @@ Every gated tool call produces exactly one record appended to the ledger. Field 
     "reason": "whitelisted read path",
     "hash": "sha256:hex..."        // optional; see §6.1
   },
-  "latency_ms": 12,                // int, 0 for deny (call never executed)
+  "latency_ms": 12,                // int, 0 for deny/approval (call never executed)
   "prev_hash": "sha256:hex...",    // record_hash of previous record; 64 zeros for seq=0
   "enforcement": {                 // optional; see §2.2
     "point": "sdk",                //   sdk | proxy | attest-only
     "effect": "blocked"            //   blocked | advisory
   },
+  "decides_ref": "sha256:hex...",  // optional; see §2.4 — set on records that
+                                   // resolve an earlier approval
   "record_hash": "sha256:hex...",  // see §3
   "sig": "ed25519:base64-64bytes"  // see §3
 }
@@ -96,6 +98,69 @@ this label; treat as unknown.
   sub-fields or omit the whole object.
 - The signed body includes `enforcement` only when non-null, so old and
   new records verify under the same hash rules.
+
+## 2.4. Approval decisions (added in v0.5.0)
+
+`"decision": "approval"` means the gate produced an opinion of **pending
+human confirmation**. The underlying tool did NOT execute at the moment
+this record was signed. The record on its own is not a terminal outcome
+— a follow-up record with `decides_ref` set to this record's
+`record_hash` carries the human's resolution (`allow` or `deny`). The
+pair is the audit trail.
+
+### Semantics
+
+- **`decision: "approval"`** records are always `enforcement.effect =
+  "blocked"` at the moment of signing — execution has not happened.
+  Advisory mode does NOT downgrade approval to "run anyway"; approval
+  means "await human authorization," not "policy is uncertain."
+- **`result_hash`** is `""` on the approval record — no result exists yet.
+- **`latency_ms`** is `0` on the approval record.
+- **`decides_ref`** is empty on the approval record (it does not resolve
+  anything).
+
+### Follow-up resolution records
+
+A resolution record has the same shape as any decision record with two
+additional constraints:
+
+- **`decides_ref`** is a non-empty `sha256:<hex>` naming the
+  `record_hash` of the earlier approval record it resolves.
+- **`decision`** is `allow` or `deny`. Any other value is malformed.
+- **`tool`**, **`args_hash`**, and **`trace_id`** MUST match the
+  approval record. Readers pairing the two MUST verify this — a
+  resolution whose fields do not match the pending record is not a
+  valid resolution of it.
+- **`policy.rule`** on the resolution SHOULD be `"human-approval"` to
+  distinguish it from a policy-engine decision.
+
+### Reader conventions
+
+- Additive: readers MUST accept records that omit `decides_ref`.
+- Readers MUST include `decides_ref` in the canonical body they
+  recompute for chain / signature verification when the field is
+  present; readers that see no `decides_ref` MUST omit it. Old and new
+  records verify under the same rules because `decides_ref` is
+  serialised only when non-empty (see §1).
+- Unresolved approval records are legitimate — a system may be waiting
+  on a human. Verifiers MUST NOT reject a ledger for containing an
+  approval with no matching resolution.
+- Multiple resolutions of the same approval SHOULD be treated as an
+  integrity concern: consumers surface the ambiguity rather than pick
+  one silently. The wire format does not prohibit duplicate
+  resolutions; it just makes them visible.
+
+### Writer conventions
+
+- The bundled `Gate.call` returns a `GateResult` with
+  `decision = APPROVAL` and no execution. The caller drives
+  out-of-band human resolution and then invokes
+  `Gate.resolve_approval(record_hash, decision, reason, tool, args,
+  trace_id)` which writes the follow-up.
+- The bundled stdio proxy responds with JSON-RPC error code `-32002`
+  (distinct from the `-32001` deny code) so clients can programmatically
+  route the request to a resolver flow. The pending record's
+  `record_hash` is returned in `error.data.approval_ref`.
 
 ## 2.3. Attestation records (added in v0.4.0)
 
@@ -364,7 +429,8 @@ appears in the ledger; see §5.1.
   3. Evaluates policy → decision
   4. If `allow`: forwards, times execution, records with `result_hash`
   5. If `deny`: replies with JSON-RPC error `{code: -32001, message: "denied by policy: <rule>"}` and records with `result_hash = ""`
-  6. If policy engine errors: `decision = "error"`, deny by default, record reason
+  6. If `approval`: replies with JSON-RPC error `{code: -32002, message: "approval required: <rule>", data: {approval_ref: <pending record_hash>}}` and records with `result_hash = ""`; see §2.4
+  7. If policy engine errors: `decision = "error"`, deny by default, record reason
 
 ## 8. Trace Correlation
 

@@ -1,4 +1,4 @@
-export type Decision = "allow" | "deny" | "error";
+export type Decision = "allow" | "deny" | "error" | "approval";
 
 export interface Actor {
   id: string;
@@ -90,6 +90,14 @@ export interface DecisionRecord {
   latency_ms: number;
   prev_hash: string;
   enforcement?: Enforcement;
+  /**
+   * Hash of an earlier `approval` record this record resolves. When
+   * non-empty, this record is the human-decided follow-up to an earlier
+   * pending approval; readers pair the two by matching `decides_ref`
+   * against a prior record's `record_hash`. Empty on ordinary records.
+   * Emitted on the wire only when non-empty — additive per WIRE §2.4.
+   */
+  decides_ref?: string;
   record_hash?: string;
   sig?: string;
 }
@@ -186,5 +194,8 @@ export function recordBody(rec: DecisionRecord): Record<string, unknown> {
   // Additive: emit `enforcement` only when populated so v0.3.0-era
   // readers (which don't know the field) still verify.
   if (rec.enforcement) body.enforcement = rec.enforcement;
+  // Same discipline for decides_ref (WIRE §2.4) — v0.4.0-era readers
+  // must still verify records that don't carry it.
+  if (rec.decides_ref) body.decides_ref = rec.decides_ref;
   return body;
 }

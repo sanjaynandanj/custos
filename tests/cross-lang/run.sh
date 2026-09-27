@@ -117,4 +117,43 @@ if [ "$PY_ATT" != "$JS_ATT" ]; then
   exit 1
 fi
 
+# Approval + resolution pair parity (WIRE §2.4). Both writers emit an
+# `approval` record for `restart_prod` and a follow-up with
+# `decides_ref` set to the approval's record_hash. The parity assertion
+# is not on byte-value equality (record_hash and ts differ across the
+# two ledgers by construction) — it's that BOTH writers produce the
+# same shape: an approval record with decides_ref absent, and a
+# resolution record with decides_ref present and matching an earlier
+# record_hash in the same ledger.
+echo "--- approval + resolution pair parity ---"
+for LABEL in py js; do
+  LEDGER="$WORK/$LABEL/ledger.jsonl"
+  SHAPE=$(python -c "
+import json, sys
+approval, resolution = None, None
+by_hash = {}
+for line in open(sys.argv[1]):
+    rec = json.loads(line)
+    if rec.get('type', 'decision') != 'decision':
+        continue
+    by_hash[rec['record_hash']] = rec
+    if rec.get('decision') == 'approval' and not rec.get('decides_ref'):
+        approval = rec
+    if rec.get('decides_ref'):
+        resolution = rec
+assert approval is not None, 'no approval record found'
+assert resolution is not None, 'no resolution record found'
+assert 'decides_ref' not in approval, 'approval must not have decides_ref'
+assert resolution['decides_ref'] in by_hash, 'decides_ref does not name a prior record'
+assert by_hash[resolution['decides_ref']]['decision'] == 'approval', \
+    'decides_ref points at a non-approval record'
+assert resolution['tool'] == approval['tool'], 'tool mismatch on resolution'
+assert resolution['args_hash'] == approval['args_hash'], 'args_hash mismatch on resolution'
+assert resolution['trace_id'] == approval['trace_id'], 'trace_id mismatch on resolution'
+assert resolution['policy']['rule'] == 'human-approval', 'rule must be human-approval'
+print('OK')
+" "$LEDGER")
+  echo "$LABEL: $SHAPE"
+done
+
 echo "cross-language OK"

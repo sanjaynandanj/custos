@@ -213,6 +213,6 @@ export function loadPolicy(pathOrData: string | object): Policy {
 }
 
 function parseDecision(s: string): Decision {
-  if (s === "allow" || s === "deny" || s === "error") return s;
+  if (s === "allow" || s === "deny" || s === "error" || s === "approval") return s;
   throw new Error(`invalid decision: ${s}`);
 }

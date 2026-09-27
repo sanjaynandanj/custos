@@ -21,6 +21,12 @@ from custos.token import generate_token
 
 
 DENY_CODE = -32001
+# Distinct from DENY_CODE so clients can programmatically detect
+# "human-in-the-loop required" and route to a resolution flow rather
+# than surface a hard failure. The pending record's record_hash is
+# returned in ``data.approval_ref`` so the resolver knows which
+# approval it is answering.
+APPROVAL_CODE = -32002
 
 
 @dataclass
@@ -120,21 +126,42 @@ async def run_stdio_proxy(config: ProxyConfig) -> int:
                     sys.stdout.flush()
                     continue
                 if pd.decision != Decision.ALLOW:
-                    # Deny: reply to client, do not forward
+                    # Non-allow: reply to client, do not forward.
+                    # APPROVAL and DENY differ in code + message so a
+                    # client can route approvals to a resolver flow
+                    # rather than surface them as hard failures.
                     rec = _record(
                         config, tool, args, None, pd.decision, pd.rule_id, pd.reason,
                         latency_ms=0, trace_id=trace_id, span_id=span_id,
                     )
                     config.ledger.append(rec)
-                    err_resp = {
-                        "jsonrpc": "2.0",
-                        "id": msg.get("id"),
-                        "error": {
-                            "code": DENY_CODE,
-                            "message": f"denied by policy: {pd.rule_id or 'default'}",
-                            "data": {"reason": pd.reason, "trace_id": trace_id},
-                        },
-                    }
+                    if pd.decision == Decision.APPROVAL:
+                        err_resp = {
+                            "jsonrpc": "2.0",
+                            "id": msg.get("id"),
+                            "error": {
+                                "code": APPROVAL_CODE,
+                                "message": f"approval required: {pd.rule_id or 'default'}",
+                                "data": {
+                                    "reason": pd.reason,
+                                    "trace_id": trace_id,
+                                    # Pending record hash so a resolver
+                                    # can reference this specific pending
+                                    # decision via ``decides_ref``.
+                                    "approval_ref": rec.record_hash,
+                                },
+                            },
+                        }
+                    else:
+                        err_resp = {
+                            "jsonrpc": "2.0",
+                            "id": msg.get("id"),
+                            "error": {
+                                "code": DENY_CODE,
+                                "message": f"denied by policy: {pd.rule_id or 'default'}",
+                                "data": {"reason": pd.reason, "trace_id": trace_id},
+                            },
+                        }
                     sys.stdout.write(json.dumps(err_resp) + "\n")
                     sys.stdout.flush()
                     continue

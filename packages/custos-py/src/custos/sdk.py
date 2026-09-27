@@ -181,7 +181,15 @@ class Gate:
             rec = self._build_record(tool, args, None, Decision.ERROR, "", reason, 0, tid)
             self.ledger.append(rec)
             return GateResult(decision=Decision.ERROR, rule="", reason=reason, record=rec, error=str(e))
-        if pd.decision != Decision.ALLOW and not self.advisory:
+        # Non-ALLOW outcomes record and return without executing, with one
+        # narrow exception: DENY under advisory mode falls through to
+        # execute (the ledger still records what the policy WOULD have
+        # enforced). APPROVAL and ERROR never fall through — approval
+        # means "await human authorization," error means the engine
+        # broke; advisory is not an escape hatch for either.
+        if pd.decision != Decision.ALLOW and not (
+            self.advisory and pd.decision == Decision.DENY
+        ):
             rec = self._build_record(tool, args, None, pd.decision, pd.rule_id, pd.reason, 0, tid)
             self.ledger.append(rec)
             return GateResult(decision=pd.decision, rule=pd.rule_id, reason=pd.reason, record=rec)
@@ -203,12 +211,13 @@ class Gate:
             self.ledger.append(rec)
             return GateResult(decision=decision, rule=pd.rule_id, reason=reason, record=rec, error=error)
         latency_ms = int((time.perf_counter() - started) * 1000)
-        # In advisory mode, record the policy's decision, not ALLOW —
-        # that's the whole point of advisory: the ledger reflects what
-        # the policy said, so operators can see impact before flipping
-        # to blocked.
+        # In advisory mode, record the policy's DENY (not ALLOW) — the
+        # whole point of advisory is that the ledger reflects what the
+        # policy said, so operators can see impact before flipping to
+        # blocked. APPROVAL/ERROR never reach here (they returned above),
+        # so the only advisory case that falls through is DENY.
         recorded_decision = (
-            pd.decision if self.advisory and pd.decision != Decision.ALLOW else Decision.ALLOW
+            Decision.DENY if self.advisory and pd.decision == Decision.DENY else Decision.ALLOW
         )
         rec = self._build_record(tool, args, result, recorded_decision, pd.rule_id, pd.reason, latency_ms, tid)
         self.ledger.append(rec)
@@ -217,6 +226,53 @@ class Gate:
             decision=recorded_decision, rule=pd.rule_id, reason=pd.reason,
             record=rec, result=result, token=token,
         )
+
+    def resolve_approval(
+        self,
+        approval_record_hash: str,
+        resolution: Decision,
+        reason: str,
+        tool: str,
+        args: dict,
+        trace_id: str,
+    ) -> DecisionRecord:
+        """Write a follow-up record that resolves an earlier ``approval``.
+
+        The follow-up carries ``decides_ref = approval_record_hash`` so a
+        reader can pair the two by walking the chain. ``resolution`` MUST
+        be ``Decision.ALLOW`` or ``Decision.DENY``; other values raise.
+
+        ``tool``, ``args``, and ``trace_id`` MUST match the approval
+        record they resolve — this ties the resolution to the specific
+        pending action, not just "a human said yes at some time." A
+        verifier reading the pair confirms these match before treating
+        the resolution as authoritative.
+
+        Note: this method records the human's decision. It does NOT
+        execute the tool. If the resolution is ALLOW, the caller is
+        responsible for invoking ``Gate.call`` (or the equivalent) to
+        actually run the tool — a subsequent record will then reflect
+        the execution outcome.
+        """
+        if resolution not in (Decision.ALLOW, Decision.DENY):
+            raise ValueError(
+                f"resolve_approval: resolution must be ALLOW or DENY, got {resolution!r}"
+            )
+        if not approval_record_hash:
+            raise ValueError("resolve_approval: approval_record_hash is required")
+        rec = self._build_record(
+            tool=tool,
+            args=args,
+            result=None,
+            decision=resolution,
+            rule="human-approval",
+            reason=reason,
+            latency_ms=0,
+            trace_id=trace_id,
+            decides_ref=approval_record_hash,
+        )
+        self.ledger.append(rec)
+        return rec
 
     async def acall(
         self,
@@ -235,7 +291,12 @@ class Gate:
             rec = self._build_record(tool, args, None, Decision.ERROR, "", reason, 0, tid)
             self.ledger.append(rec)
             return GateResult(decision=Decision.ERROR, rule="", reason=reason, record=rec, error=str(e))
-        if pd.decision != Decision.ALLOW and not self.advisory:
+        # See call() for the advisory-narrowing rationale: only DENY
+        # falls through under advisory; APPROVAL and ERROR always
+        # record-and-return.
+        if pd.decision != Decision.ALLOW and not (
+            self.advisory and pd.decision == Decision.DENY
+        ):
             rec = self._build_record(tool, args, None, pd.decision, pd.rule_id, pd.reason, 0, tid)
             self.ledger.append(rec)
             return GateResult(decision=pd.decision, rule=pd.rule_id, reason=pd.reason, record=rec)
@@ -249,8 +310,10 @@ class Gate:
             self.ledger.append(rec)
             return GateResult(decision=Decision.ERROR, rule=pd.rule_id, reason=reason, record=rec, error=str(e))
         latency_ms = int((time.perf_counter() - started) * 1000)
+        # See call() — advisory only downgrades DENY, so the only
+        # advisory case that reaches here is DENY.
         recorded_decision = (
-            pd.decision if self.advisory and pd.decision != Decision.ALLOW else Decision.ALLOW
+            Decision.DENY if self.advisory and pd.decision == Decision.DENY else Decision.ALLOW
         )
         rec = self._build_record(tool, args, result, recorded_decision, pd.rule_id, pd.reason, latency_ms, tid)
         self.ledger.append(rec)
@@ -296,6 +359,7 @@ class Gate:
         reason: str,
         latency_ms: int,
         trace_id: str,
+        decides_ref: str = "",
     ) -> DecisionRecord:
         args_hash = hash_of_value(args)
         if decision == Decision.ALLOW and result is not None:
@@ -324,4 +388,5 @@ class Gate:
             latency_ms=latency_ms,
             prev_hash="",  # ledger fills in
             enforcement=self.enforcement,
+            decides_ref=decides_ref,
         )

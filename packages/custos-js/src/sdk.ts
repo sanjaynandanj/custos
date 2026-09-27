@@ -196,7 +196,13 @@ export class Gate {
       this.ledger.append(rec);
       return { decision: "error", rule: "", reason, record: rec, allowed: false, error: reason };
     }
-    if (pd.decision !== "allow" && !this.advisory) {
+    // Non-allow outcomes record and return without executing, with one
+    // narrow exception: DENY under advisory mode falls through to
+    // execute (the ledger still records what the policy WOULD have
+    // enforced). APPROVAL and ERROR never fall through — approval
+    // means "await human authorization," error means the engine
+    // broke; advisory is not an escape hatch for either.
+    if (pd.decision !== "allow" && !(this.advisory && pd.decision === "deny")) {
       const rec = this.buildRecord(tool, args, undefined, pd.decision, pd.ruleId, pd.reason, 0, tid);
       this.ledger.append(rec);
       return { decision: pd.decision, rule: pd.ruleId, reason: pd.reason, record: rec, allowed: false };
@@ -205,11 +211,10 @@ export class Gate {
     try {
       const result = await fn(args);
       const latency = Math.round(performance.now() - t0);
-      // Advisory mode: record the policy's decision (deny/error) but still
-      // returned the executed result. The record accurately says "gate
-      // had an opinion, action ran regardless."
+      // Only advisory-DENY reaches here as a non-allow decision;
+      // APPROVAL/ERROR returned above.
       const recordedDecision: Decision =
-        this.advisory && pd.decision !== "allow" ? pd.decision : "allow";
+        this.advisory && pd.decision === "deny" ? "deny" : "allow";
       const rec = this.buildRecord(tool, args, result, recordedDecision, pd.ruleId, pd.reason, latency, tid);
       this.ledger.append(rec);
       const token = this.maybeToken(rec, recordedDecision);
@@ -245,8 +250,9 @@ export class Gate {
     tool: string, args: unknown, result: unknown,
     decision: Decision, rule: string, reason: string,
     latencyMs: number, traceId: string,
+    decidesRef = "",
   ): DecisionRecord {
-    return {
+    const rec: DecisionRecord = {
       v: 1,
       seq: 0,
       ts: isoNowMs(),
@@ -269,5 +275,49 @@ export class Gate {
       prev_hash: "",
       enforcement: this.enforcement,
     };
+    if (decidesRef) rec.decides_ref = decidesRef;
+    return rec;
+  }
+
+  /**
+   * Write a follow-up record that resolves an earlier `approval` (WIRE §2.4).
+   *
+   * The follow-up carries `decides_ref = approvalRecordHash` so a reader can
+   * pair the two by walking the chain. `resolution` MUST be `"allow"` or
+   * `"deny"`.
+   *
+   * `tool`, `args`, and `traceId` MUST match the approval record they resolve
+   * — this ties the resolution to the specific pending action, not just "a
+   * human said yes at some time." A verifier reading the pair confirms these
+   * match before treating the resolution as authoritative.
+   *
+   * Note: this method records the human's decision. It does NOT execute the
+   * tool. If the resolution is `"allow"`, the caller is responsible for
+   * invoking `Gate.call` (or the equivalent) to actually run the tool.
+   */
+  resolveApproval(opts: {
+    approvalRecordHash: string;
+    resolution: "allow" | "deny";
+    reason: string;
+    tool: string;
+    args: Record<string, unknown>;
+    traceId: string;
+  }): DecisionRecord {
+    if (opts.resolution !== "allow" && opts.resolution !== "deny") {
+      throw new Error(
+        `resolveApproval: resolution must be "allow" or "deny", got ${JSON.stringify(opts.resolution)}`,
+      );
+    }
+    if (!opts.approvalRecordHash) {
+      throw new Error("resolveApproval: approvalRecordHash is required");
+    }
+    const rec = this.buildRecord(
+      opts.tool, opts.args, undefined,
+      opts.resolution, "human-approval", opts.reason,
+      0, opts.traceId,
+      opts.approvalRecordHash,
+    );
+    this.ledger.append(rec);
+    return rec;
   }
 }

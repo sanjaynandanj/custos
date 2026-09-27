@@ -576,6 +576,15 @@ from custos.adapters.cedar import CedarPolicy
 policy = CedarPolicy(id="my-cedar", policy_text=open("policy.cedar").read())
 ```
 
+The adapter computes `sha256:<hex>` of `policy_text` on construction and
+surfaces it on the ledger record, so every Cedar decision is bound to the
+exact policy bytes in effect.
+
+Backed by [`cedarpy`](https://pypi.org/project/cedarpy/), a
+community-maintained Rust binding for Cedar. Not an official AWS/Cedar Team
+package — pinned to a narrow version range in `pyproject.toml` for
+deterministic engine semantics.
+
 ### OPA sidecar
 
 ```bash
@@ -586,6 +595,28 @@ pip install custos-mcp   # OPA runs as a separate process
 from custos.adapters.opa import OpaPolicy
 policy = OpaPolicy(id="my-opa", url="http://localhost:8181/v1/data/custos/authz")
 ```
+
+Custos POSTs `{"input": {actor, tool, arguments, ...}}` to the configured
+Data API URL and expects one of:
+
+```json
+{
+  "result": {
+    "allow": true,
+    "reason": "read-only tools are allowed",
+    "rule_id": "allow-read-only"
+  }
+}
+```
+
+...or a bare boolean `{"result": true}` for the trivial case. `reason` and
+`rule_id` are optional but land in the signed ledger record — populate them.
+The legacy field name `rule` is still accepted for backward compatibility.
+
+Network failures, non-2xx responses, and malformed JSON fail closed
+(`Decision.ERROR`, treated as deny by the gateway). OPA's server exposes
+policy-management APIs alongside the Data API — bind it to loopback in
+development and restrict access in production.
 
 ### OpenTelemetry spans
 
@@ -721,6 +752,12 @@ pip install custos-mcp[web]          # dashboard
 pip install custos-mcp[web,otel]     # dashboard + OTel
 pip install custos-mcp[all]          # everything
 ```
+
+---
+
+## How Custos compares
+
+See [`docs/COMPETITIVE.md`](docs/COMPETITIVE.md) for an evidence-cited market map covering MCP gateways (ContextForge, ToolHive, agentgateway, Docker MCP Gateway, Obsigno), scanning/observability tools (Snyk Agent Scan, Langfuse, Phoenix, OpenLLMetry), and commercial identity/runtime products (Zenity, Noma, Lasso, SGNL, Astrix, Oasis, Descope, Palo Alto Prisma AIRS). Each entry links to primary sources so claims can be re-verified.
 
 ---
 
